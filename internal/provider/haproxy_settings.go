@@ -14,10 +14,6 @@ import (
 	datasourceschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -63,7 +59,7 @@ var haproxySettingsAttributes = []settingsAttribute{
 	{Name: "remotesyslog", JSONName: "remotesyslog", Kind: settingsAttributeString, Description: "Remote syslog destination for HAProxy logs, or /var/run/log for local pfSense logs."},
 	{Name: "logfacility", JSONName: "logfacility", Kind: settingsAttributeString, Description: "Syslog facility used by HAProxy."},
 	{Name: "loglevel", JSONName: "loglevel", Kind: settingsAttributeString, Description: "Minimum HAProxy log level to emit."},
-	{Name: "log_send_hostname", JSONName: "log-send-hostname", Kind: settingsAttributeString, Description: "Hostname included in HAProxy syslog headers. Empty uses the system hostname."},
+	{Name: "log_send_hostname", JSONName: "log_send_hostname", Kind: settingsAttributeString, Description: "Hostname included in HAProxy syslog headers. Empty uses the system hostname."},
 	{Name: "resolver_retries", JSONName: "resolver_retries", Kind: settingsAttributeInt64, Description: "Number of DNS queries HAProxy sends before giving up."},
 	{Name: "resolver_timeoutretry", JSONName: "resolver_timeoutretry", Kind: settingsAttributeString, Description: "Time between DNS retry queries when no response is received."},
 	{Name: "resolver_holdvalid", JSONName: "resolver_holdvalid", Kind: settingsAttributeString, Description: "Interval between successive name resolutions after a valid answer."},
@@ -320,27 +316,24 @@ func haproxySettingsResourceSchemaAttributes() map[string]resourceschema.Attribu
 		switch attribute.Kind {
 		case settingsAttributeBool:
 			attributes[attribute.Name] = resourceschema.BoolAttribute{
-				Optional:      true,
-				Computed:      true,
-				Description:   attribute.Description,
-				Sensitive:     attribute.Sensitive,
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Optional:    true,
+				Computed:    true,
+				Description: attribute.Description,
+				Sensitive:   attribute.Sensitive,
 			}
 		case settingsAttributeInt64:
 			attributes[attribute.Name] = resourceschema.Int64Attribute{
-				Optional:      true,
-				Computed:      true,
-				Description:   attribute.Description,
-				Sensitive:     attribute.Sensitive,
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+				Optional:    true,
+				Computed:    true,
+				Description: attribute.Description,
+				Sensitive:   attribute.Sensitive,
 			}
 		case settingsAttributeString:
 			attributes[attribute.Name] = resourceschema.StringAttribute{
-				Optional:      true,
-				Computed:      true,
-				Description:   attribute.Description,
-				Sensitive:     attribute.Sensitive,
-				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Optional:    true,
+				Computed:    true,
+				Description: attribute.Description,
+				Sensitive:   attribute.Sensitive,
 			}
 		}
 	}

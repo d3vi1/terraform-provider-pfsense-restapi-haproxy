@@ -253,10 +253,10 @@ func TestHaproxySettingsResourceUpdatePatchesChangedFieldsOnly(t *testing.T) {
 	if patchPayload["maxconn"] != float64(250) {
 		t.Fatalf("maxconn patch = %#v", patchPayload["maxconn"])
 	}
-	if patchPayload["log-send-hostname"] != "fw-uat" {
-		t.Fatalf("log-send-hostname patch = %#v", patchPayload["log-send-hostname"])
+	if patchPayload["log_send_hostname"] != "fw-uat" {
+		t.Fatalf("log_send_hostname patch = %#v", patchPayload["log_send_hostname"])
 	}
-	for _, forbidden := range []string{"advanced", "apply", "async", "dns_resolvers", "email_mailers"} {
+	for _, forbidden := range []string{"advanced", "apply", "async", "dns_resolvers", "email_mailers", "log-send-hostname"} {
 		if _, ok := patchPayload[forbidden]; ok {
 			t.Fatalf("patch unexpectedly included %q: %#v", forbidden, patchPayload)
 		}
