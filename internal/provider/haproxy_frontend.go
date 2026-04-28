@@ -378,6 +378,9 @@ func validateHaproxyFrontendOptionalFields(model haproxyFrontendModel, frontendT
 		default:
 			return fmt.Errorf("httpclose must be one of http-keep-alive, http-tunnel, httpclose, http-server-close, or forceclose")
 		}
+		if frontendType != "http" {
+			return fmt.Errorf("httpclose is only valid when type is http")
+		}
 	}
 	if !model.MaxConnections.IsNull() && !model.MaxConnections.IsUnknown() && model.MaxConnections.ValueInt64() < 0 {
 		return fmt.Errorf("max_connections must be non-negative")
@@ -403,9 +406,6 @@ func haproxyFrontendName(value types.String) (string, error) {
 	}
 	if trimmed != name {
 		return "", fmt.Errorf("name must not contain leading or trailing whitespace")
-	}
-	if len(name) < 2 {
-		return "", fmt.Errorf("name must be at least 2 characters")
 	}
 	if strings.Contains(name, "/") {
 		return "", fmt.Errorf("name must not contain /")

@@ -304,7 +304,7 @@ func TestHaproxyFrontendResourceUpdateResolvesAPIIDAndPatchesChangedFieldsOnly(t
 	plan.LogDetailed = types.BoolValue(true)
 	plan.ClientTimeout = types.Int64Value(45000)
 	plan.ForwardFor = types.BoolNull()
-	plan.HTTPClose = types.StringValue("http-tunnel")
+	plan.HTTPClose = types.StringNull()
 
 	resp := resource.UpdateResponse{
 		State: testResourceState(t, schema, prior),
@@ -332,7 +332,7 @@ func TestHaproxyFrontendResourceUpdateResolvesAPIIDAndPatchesChangedFieldsOnly(t
 	if patchPayload["id"] != "42" {
 		t.Fatalf("patch id = %#v", patchPayload["id"])
 	}
-	if patchPayload["type"] != "tcp" || patchPayload["status"] != "disabled" || patchPayload["httpclose"] != "http-tunnel" {
+	if patchPayload["type"] != "tcp" || patchPayload["status"] != "disabled" || patchPayload["httpclose"] != nil {
 		t.Fatalf("patch string fields = %#v", patchPayload)
 	}
 	if patchPayload["max_connections"] != float64(2000) || patchPayload["client_timeout"] != float64(45000) {
@@ -492,7 +492,7 @@ func TestHaproxyFrontendResourceImportUsesNaturalName(t *testing.T) {
 		t.Fatalf("imported state = %#v", state)
 	}
 
-	for _, id := range []string{"", " ", "a", "app/frontend", "app frontend", "app:frontend"} {
+	for _, id := range []string{"", " ", "app/frontend", "app frontend", "app:frontend"} {
 		invalidResp := resource.ImportStateResponse{
 			State: tfsdk.State{Schema: schema},
 		}
@@ -518,13 +518,13 @@ func TestHaproxyFrontendValidation(t *testing.T) {
 	if _, err := validateHaproxyFrontendPlan(valid); err != nil {
 		t.Fatalf("valid frontend rejected: %v", err)
 	}
+	singleCharacterName := valid
+	singleCharacterName.Name = types.StringValue("a")
+	if _, err := validateHaproxyFrontendPlan(singleCharacterName); err != nil {
+		t.Fatalf("single-character frontend name rejected: %v", err)
+	}
 
 	tests := map[string]haproxyFrontendModel{
-		"short name": func() haproxyFrontendModel {
-			model := valid
-			model.Name = types.StringValue("a")
-			return model
-		}(),
 		"name slash": func() haproxyFrontendModel {
 			model := valid
 			model.Name = types.StringValue("app/frontend")
@@ -548,6 +548,13 @@ func TestHaproxyFrontendValidation(t *testing.T) {
 		"bad httpclose": func() haproxyFrontendModel {
 			model := valid
 			model.HTTPClose = types.StringValue("invalid")
+			return model
+		}(),
+		"httpclose tcp": func() haproxyFrontendModel {
+			model := valid
+			model.Type = types.StringValue("tcp")
+			model.ForwardFor = types.BoolNull()
+			model.HTTPClose = types.StringValue("http-tunnel")
 			return model
 		}(),
 		"forwardfor tcp": func() haproxyFrontendModel {
