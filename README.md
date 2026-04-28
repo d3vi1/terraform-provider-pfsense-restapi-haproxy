@@ -5,7 +5,8 @@ Terraform provider for managing the pfSense HAProxy package through `pfSense-pkg
 ## Status
 
 Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
-an import-first ownership model. Additional HAProxy resources are tracked
+an import-first ownership model, and `pfsense_haproxy_apply` provides an
+explicit apply/reload lifecycle. Additional HAProxy resources are tracked
 through GitHub issues and milestones.
 
 ## Requirements
@@ -47,9 +48,9 @@ Provider arguments can also be supplied with environment variables:
 
 Prefer API key authentication for automation.
 
-`auto_apply` is intentionally not exposed yet. Apply/reload behavior is reserved
-for the planned `pfsense_haproxy_apply` implementation once HAProxy resource
-semantics are in place.
+`auto_apply` is intentionally not exposed. HAProxy apply/reload behavior is
+modeled explicitly by `pfsense_haproxy_apply`; settings and other durable
+resources do not trigger hidden reloads.
 
 ## HAProxy settings ownership
 
@@ -80,6 +81,50 @@ Import example:
 terraform import pfsense_haproxy_settings.global settings
 ```
 
+## HAProxy apply lifecycle
+
+`data "pfsense_haproxy_apply"` reads `GET /services/haproxy/apply` and exposes:
+
+- `applied`: true when pfSense reports all HAProxy changes are applied.
+- `pending`: true when pfSense reports pending HAProxy changes.
+- `status`: normalized as `done` or `pending`.
+- `status_detail`: human-readable next-step guidance.
+
+`resource "pfsense_haproxy_apply"` is an explicit action resource:
+
+- Create runs `POST /services/haproxy/apply`.
+- Update runs `POST /services/haproxy/apply` only when `triggers` changes.
+- Create/update poll `GET /services/haproxy/apply` until `applied=true`.
+- Polling is bounded by `timeout` and `poll_interval`.
+- Delete removes Terraform state only.
+- Import uses the fixed ID `apply`.
+
+Example:
+
+```hcl
+resource "pfsense_haproxy_apply" "global" {
+  depends_on = [pfsense_haproxy_settings.global]
+
+  triggers = {
+    settings = sha1(jsonencode({
+      enable               = pfsense_haproxy_settings.global.enable
+      maxconn              = pfsense_haproxy_settings.global.maxconn
+      nbthread             = pfsense_haproxy_settings.global.nbthread
+      hard_stop_after      = pfsense_haproxy_settings.global.hard_stop_after
+      sslcompatibilitymode = pfsense_haproxy_settings.global.sslcompatibilitymode
+    }))
+  }
+
+  timeout       = "2m"
+  poll_interval = "2s"
+}
+```
+
+UAT validation is still pending. The implementation assumes the pfREST
+`HAProxyApply` model shape where `GET /services/haproxy/apply` returns an
+`applied` boolean, and `POST /services/haproxy/apply` starts HAProxy
+configuration application.
+
 ## Development
 
 ```bash
@@ -92,6 +137,7 @@ make testacc
 
 ## Resources
 
+- `pfsense_haproxy_apply`
 - `pfsense_haproxy_settings`
 
 ## Planned resources
@@ -104,7 +150,6 @@ make testacc
 - `pfsense_haproxy_frontend_action`
 - `pfsense_haproxy_frontend_certificate`
 - `pfsense_haproxy_file`
-- `pfsense_haproxy_apply`
 
 ## Example ingress contract
 

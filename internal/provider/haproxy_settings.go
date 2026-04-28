@@ -528,6 +528,10 @@ func terraformValueToJSON(kind settingsAttributeKind, value attr.Value) any {
 }
 
 func apiBool(payload map[string]any, names ...string) (types.Bool, error) {
+	return apiBoolWithLabel(payload, "HAProxy settings", names...)
+}
+
+func apiBoolWithLabel(payload map[string]any, label string, names ...string) (types.Bool, error) {
 	value, name, ok := apiValue(payload, names...)
 	if !ok || value == nil {
 		return types.BoolNull(), nil
@@ -543,7 +547,7 @@ func apiBool(payload map[string]any, names ...string) (types.Bool, error) {
 		case "0", "false", "no", "off", "":
 			return types.BoolValue(false), nil
 		default:
-			return types.BoolNull(), fmt.Errorf("HAProxy settings field %q is %q, not a boolean", name, typed)
+			return types.BoolNull(), fmt.Errorf("%s field %q is %q, not a boolean", label, name, typed)
 		}
 	case float64:
 		if typed == 0 {
@@ -552,11 +556,11 @@ func apiBool(payload map[string]any, names ...string) (types.Bool, error) {
 		if typed == 1 {
 			return types.BoolValue(true), nil
 		}
-		return types.BoolNull(), fmt.Errorf("HAProxy settings field %q is %v, not a boolean", name, typed)
+		return types.BoolNull(), fmt.Errorf("%s field %q is %v, not a boolean", label, name, typed)
 	case json.Number:
 		intValue, err := typed.Int64()
 		if err != nil {
-			return types.BoolNull(), fmt.Errorf("HAProxy settings field %q is %q, not a boolean: %w", name, typed.String(), err)
+			return types.BoolNull(), fmt.Errorf("%s field %q is %q, not a boolean: %w", label, name, typed.String(), err)
 		}
 		if intValue == 0 {
 			return types.BoolValue(false), nil
@@ -564,9 +568,9 @@ func apiBool(payload map[string]any, names ...string) (types.Bool, error) {
 		if intValue == 1 {
 			return types.BoolValue(true), nil
 		}
-		return types.BoolNull(), fmt.Errorf("HAProxy settings field %q is %q, not a boolean", name, typed.String())
+		return types.BoolNull(), fmt.Errorf("%s field %q is %q, not a boolean", label, name, typed.String())
 	default:
-		return types.BoolNull(), fmt.Errorf("HAProxy settings field %q has unsupported boolean type %T", name, value)
+		return types.BoolNull(), fmt.Errorf("%s field %q has unsupported boolean type %T", label, name, value)
 	}
 }
 
