@@ -28,6 +28,7 @@ var (
 	_ resource.Resource                = (*haproxyFrontendAddressResource)(nil)
 	_ resource.ResourceWithConfigure   = (*haproxyFrontendAddressResource)(nil)
 	_ resource.ResourceWithImportState = (*haproxyFrontendAddressResource)(nil)
+	_ resource.ResourceWithModifyPlan  = (*haproxyFrontendAddressResource)(nil)
 )
 
 type frontendAddressAttributeKind string
@@ -87,6 +88,38 @@ func (r *haproxyFrontendAddressResource) Configure(_ context.Context, req resour
 	}
 
 	r.client = client
+}
+
+func (r *haproxyFrontendAddressResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+
+	var plan haproxyFrontendAddressModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if plan.Extaddr.IsNull() || plan.Extaddr.IsUnknown() || plan.ExtaddrCustom.IsNull() || plan.ExtaddrCustom.IsUnknown() {
+		return
+	}
+
+	extaddr, err := haproxyFrontendAddressExtaddr(plan.Extaddr)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid HAProxy frontend address", err.Error())
+		return
+	}
+	normalizedCustom, err := haproxyFrontendAddressExtaddrCustom(plan.ExtaddrCustom, extaddr)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid HAProxy frontend address", err.Error())
+		return
+	}
+	if plan.ExtaddrCustom.IsNull() || plan.ExtaddrCustom.IsUnknown() || plan.ExtaddrCustom.ValueString() == normalizedCustom {
+		return
+	}
+
+	plan.ExtaddrCustom = types.StringValue(normalizedCustom)
+	resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
 }
 
 func (r *haproxyFrontendAddressResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -658,20 +691,20 @@ func lookupHaproxyFrontendAddress(ctx context.Context, client *pfsense.Client, p
 }
 
 func haproxyFrontendAddressPayloadMatches(payload map[string]any, keys haproxyFrontendAddressKeys) (bool, error) {
-	extaddr, err := apiRequiredStringWithLabel(payload, "HAProxy frontend address", "extaddr")
+	extaddrValue, err := apiRequiredStringWithLabel(payload, "HAProxy frontend address", "extaddr")
 	if err != nil {
 		return false, err
+	}
+	extaddr, err := haproxyFrontendAddressExtaddr(types.StringValue(extaddrValue))
+	if err != nil {
+		return false, fmt.Errorf("HAProxy frontend address extaddr %s", err.Error())
 	}
 	if extaddr != keys.extaddr {
 		return false, nil
 	}
-	extaddrCustomValue, err := apiStringWithLabel(payload, "HAProxy frontend address", "extaddr_custom")
+	extaddrCustom, err := haproxyFrontendAddressAPIExtaddrCustom(payload, extaddr)
 	if err != nil {
 		return false, err
-	}
-	extaddrCustom := ""
-	if !extaddrCustomValue.IsNull() && !extaddrCustomValue.IsUnknown() {
-		extaddrCustom = extaddrCustomValue.ValueString()
 	}
 	if extaddrCustom != keys.extaddrCustom {
 		return false, nil
@@ -712,17 +745,17 @@ func haproxyFrontendAddressPayloadList(raw any) ([]map[string]any, error) {
 func haproxyFrontendAddressModelFromAPI(payload map[string]any, frontendName string) (haproxyFrontendAddressModel, error) {
 	address := nullHaproxyFrontendAddressModel()
 
-	extaddr, err := apiRequiredStringWithLabel(payload, "HAProxy frontend address", "extaddr")
+	extaddrValue, err := apiRequiredStringWithLabel(payload, "HAProxy frontend address", "extaddr")
 	if err != nil {
 		return address, err
 	}
-	extaddrCustomValue, err := apiStringWithLabel(payload, "HAProxy frontend address", "extaddr_custom")
+	extaddr, err := haproxyFrontendAddressExtaddr(types.StringValue(extaddrValue))
+	if err != nil {
+		return address, fmt.Errorf("HAProxy frontend address extaddr %s", err.Error())
+	}
+	extaddrCustom, err := haproxyFrontendAddressAPIExtaddrCustom(payload, extaddr)
 	if err != nil {
 		return address, err
-	}
-	extaddrCustom := ""
-	if !extaddrCustomValue.IsNull() && !extaddrCustomValue.IsUnknown() {
-		extaddrCustom = extaddrCustomValue.ValueString()
 	}
 	extaddrPort, err := apiRequiredInt64WithLabel(payload, "HAProxy frontend address", "extaddr_port")
 	if err != nil {
@@ -741,6 +774,18 @@ func haproxyFrontendAddressModelFromAPI(payload map[string]any, frontendName str
 	}
 
 	return address, nil
+}
+
+func haproxyFrontendAddressAPIExtaddrCustom(payload map[string]any, extaddr string) (string, error) {
+	extaddrCustomValue, err := apiStringWithLabel(payload, "HAProxy frontend address", "extaddr_custom")
+	if err != nil {
+		return "", err
+	}
+	if extaddrCustomValue.IsNull() || extaddrCustomValue.IsUnknown() {
+		return haproxyFrontendAddressExtaddrCustom(types.StringValue(""), extaddr)
+	}
+
+	return haproxyFrontendAddressExtaddrCustom(extaddrCustomValue, extaddr)
 }
 
 func nullHaproxyFrontendAddressModel() haproxyFrontendAddressModel {

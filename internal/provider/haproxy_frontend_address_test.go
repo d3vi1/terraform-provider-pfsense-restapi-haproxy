@@ -431,6 +431,22 @@ func TestHaproxyFrontendAddressResourceImportUsesNaturalKey(t *testing.T) {
 		t.Fatalf("imported built-in state = %#v", builtinState)
 	}
 
+	validCanonicalResp := resource.ImportStateResponse{
+		State: tfsdk.State{Schema: schema},
+	}
+	addressResource.ImportState(context.Background(), resource.ImportStateRequest{ID: "app_frontend/custom/2001:0DB8:0000:0000:0000:0000:0000:0010/443"}, &validCanonicalResp)
+	if validCanonicalResp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %#v", validCanonicalResp.Diagnostics)
+	}
+	var canonicalState haproxyFrontendAddressModel
+	diags = validCanonicalResp.State.Get(context.Background(), &canonicalState)
+	if diags.HasError() {
+		t.Fatalf("state get diagnostics: %#v", diags)
+	}
+	if canonicalState.ID.ValueString() != "app_frontend/custom/2001:db8::10/443" || canonicalState.ExtaddrCustom.ValueString() != "2001:db8::10" {
+		t.Fatalf("imported canonical state = %#v", canonicalState)
+	}
+
 	for _, id := range []string{
 		"",
 		"app_frontend",
@@ -449,6 +465,71 @@ func TestHaproxyFrontendAddressResourceImportUsesNaturalKey(t *testing.T) {
 		if !invalidResp.Diagnostics.HasError() {
 			t.Fatalf("expected diagnostic for import id %q", id)
 		}
+	}
+}
+
+func TestHaproxyFrontendAddressResourceModifyPlanCanonicalizesCustomIPv6(t *testing.T) {
+	t.Parallel()
+
+	addressResource := &haproxyFrontendAddressResource{}
+	schema := haproxyFrontendAddressResourceSchema(t)
+	plan := nullHaproxyFrontendAddressModel()
+	plan.FrontendName = types.StringValue("app_frontend")
+	plan.Extaddr = types.StringValue("custom")
+	plan.ExtaddrCustom = types.StringValue("2001:0DB8:0000:0000:0000:0000:0000:0010")
+	plan.ExtaddrPort = types.Int64Value(443)
+
+	requestPlan := testResourcePlan(t, schema, plan)
+	resp := resource.ModifyPlanResponse{
+		Plan: testResourcePlan(t, schema, plan),
+	}
+	addressResource.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+		Plan: requestPlan,
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %#v", resp.Diagnostics)
+	}
+
+	var modified haproxyFrontendAddressModel
+	diags := resp.Plan.Get(context.Background(), &modified)
+	if diags.HasError() {
+		t.Fatalf("plan get diagnostics: %#v", diags)
+	}
+	if modified.ExtaddrCustom.ValueString() != "2001:db8::10" {
+		t.Fatalf("modified extaddr_custom = %q, want 2001:db8::10", modified.ExtaddrCustom.ValueString())
+	}
+}
+
+func TestHaproxyFrontendAddressAPICanonicalizesCustomIPv6ForMatchingAndState(t *testing.T) {
+	t.Parallel()
+
+	payload := map[string]any{
+		"id":             "7",
+		"extaddr":        "custom",
+		"extaddr_custom": "2001:0DB8:0000:0000:0000:0000:0000:0010",
+		"extaddr_port":   "443",
+	}
+	keys := haproxyFrontendAddressKeys{
+		frontendName:  "app_frontend",
+		extaddr:       "custom",
+		extaddrCustom: "2001:db8::10",
+		extaddrPort:   443,
+	}
+
+	matches, err := haproxyFrontendAddressPayloadMatches(payload, keys)
+	if err != nil {
+		t.Fatalf("payload match returned error: %v", err)
+	}
+	if !matches {
+		t.Fatalf("payload did not match canonical custom IPv6 keys")
+	}
+
+	model, err := haproxyFrontendAddressModelFromAPI(payload, "app_frontend")
+	if err != nil {
+		t.Fatalf("model from API returned error: %v", err)
+	}
+	if model.ID.ValueString() != "app_frontend/custom/2001:db8::10/443" || model.ExtaddrCustom.ValueString() != "2001:db8::10" {
+		t.Fatalf("API model was not canonicalized: %#v", model)
 	}
 }
 
