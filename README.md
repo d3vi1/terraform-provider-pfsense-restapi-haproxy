@@ -45,6 +45,10 @@ Provider arguments can also be supplied with environment variables:
 
 Prefer API key authentication for automation.
 
+`auto_apply` is intentionally not exposed yet. Apply/reload behavior is reserved
+for the planned `pfsense_haproxy_apply` implementation once HAProxy resource
+semantics are in place.
+
 ## Development
 
 ```bash

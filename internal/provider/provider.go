@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -100,9 +101,7 @@ func (p *haproxyProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
-	if resolved.InsecureTLS {
-		tflog.Warn(ctx, "TLS certificate verification is disabled")
-	}
+	logInsecureTLSWarning(ctx, resolved.InsecureTLS)
 
 	client := pfsense.NewClient(pfsense.Config{
 		Endpoint:    resolved.Endpoint,
@@ -128,13 +127,17 @@ func (p *haproxyProvider) DataSources(_ context.Context) []func() datasource.Dat
 func resolveConfig(config providerConfig) (resolvedConfig, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	endpoint, d := stringOrEnv(config.Endpoint, "PFSENSE_ENDPOINT")
+	endpoint, d := stringOrEnv(config.Endpoint, "endpoint", "PFSENSE_ENDPOINT")
+	endpointHasError := d.HasError()
 	diags.Append(d...)
-	apiKey, d := stringOrEnv(config.APIKey, "PFSENSE_API_KEY")
+	apiKey, d := stringOrEnv(config.APIKey, "api_key", "PFSENSE_API_KEY")
+	apiKeyHasError := d.HasError()
 	diags.Append(d...)
-	username, d := stringOrEnv(config.Username, "PFSENSE_USERNAME")
+	username, d := stringOrEnv(config.Username, "username", "PFSENSE_USERNAME")
+	usernameHasError := d.HasError()
 	diags.Append(d...)
-	password, d := stringOrEnv(config.Password, "PFSENSE_PASSWORD")
+	password, d := stringOrEnv(config.Password, "password", "PFSENSE_PASSWORD")
+	passwordHasError := d.HasError()
 	diags.Append(d...)
 	insecureTLS, d := boolOrEnv(config.InsecureTLS, "PFSENSE_INSECURE_TLS")
 	diags.Append(d...)
@@ -142,15 +145,27 @@ func resolveConfig(config providerConfig) (resolvedConfig, diag.Diagnostics) {
 	timeout, d := durationOrEnv(config.Timeout, "PFSENSE_TIMEOUT", 30*time.Second)
 	diags.Append(d...)
 
-	endpoint = strings.TrimRight(endpoint, "/")
-	if endpoint == "" {
+	endpoint = normalizeEndpoint(endpoint)
+	if endpoint == "" && !endpointHasError {
 		diags.AddError("Missing endpoint", "Set endpoint in the provider configuration or PFSENSE_ENDPOINT environment variable.")
+	} else if endpoint != "" {
+		diags.Append(validateEndpoint(endpoint)...)
 	}
-	if apiKey == "" && (username == "" || password == "") {
-		diags.AddError("Missing authentication", "Set api_key/PFSENSE_API_KEY or username/password via provider configuration or environment variables.")
-	}
-	if apiKey != "" && (username != "" || password != "") {
-		diags.AddWarning("Multiple authentication methods configured", "api_key takes precedence over username/password authentication.")
+
+	if !apiKeyHasError && !usernameHasError && !passwordHasError {
+		if apiKey == "" {
+			switch {
+			case username == "" && password == "":
+				diags.AddError("Missing authentication", "Set api_key/PFSENSE_API_KEY or username/password via provider configuration or environment variables.")
+			case username == "":
+				diags.AddError("Incomplete username/password authentication", "Set username/PFSENSE_USERNAME when password/PFSENSE_PASSWORD is configured, or use api_key/PFSENSE_API_KEY.")
+			case password == "":
+				diags.AddError("Incomplete username/password authentication", "Set password/PFSENSE_PASSWORD when username/PFSENSE_USERNAME is configured, or use api_key/PFSENSE_API_KEY.")
+			}
+		}
+		if apiKey != "" && (username != "" || password != "") {
+			diags.AddWarning("Multiple authentication methods configured", "api_key takes precedence over username/password authentication.")
+		}
 	}
 
 	return resolvedConfig{
@@ -163,10 +178,10 @@ func resolveConfig(config providerConfig) (resolvedConfig, diag.Diagnostics) {
 	}, diags
 }
 
-func stringOrEnv(value types.String, envName string) (string, diag.Diagnostics) {
+func stringOrEnv(value types.String, attrName string, envName string) (string, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if value.IsUnknown() {
-		diags.AddError("Invalid configuration", fmt.Sprintf("%s is unknown", envName))
+		diags.AddError("Invalid configuration", fmt.Sprintf("%s is unknown", attrName))
 		return "", diags
 	}
 	if !value.IsNull() {
@@ -217,5 +232,43 @@ func durationOrEnv(value types.String, envName string, fallback time.Duration) (
 		diags.AddError("Invalid timeout", fmt.Sprintf("%q is not a valid duration", raw))
 		return fallback, diags
 	}
+	if parsed <= 0 {
+		diags.AddError("Invalid timeout", "timeout must be greater than zero.")
+		return fallback, diags
+	}
 	return parsed, diags
+}
+
+func normalizeEndpoint(endpoint string) string {
+	return strings.TrimRight(strings.TrimSpace(endpoint), "/")
+}
+
+func validateEndpoint(endpoint string) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		diags.AddError("Invalid endpoint", fmt.Sprintf("endpoint must be a valid absolute http(s) URL: %v", err))
+		return diags
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		diags.AddError("Invalid endpoint", "endpoint must be an absolute http(s) URL, for example https://pfsense.example.com.")
+		return diags
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+	default:
+		diags.AddError("Invalid endpoint", fmt.Sprintf("endpoint scheme must be http or https, got %q.", parsed.Scheme))
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		diags.AddError("Invalid endpoint", "endpoint must not include a query string or fragment.")
+	}
+
+	return diags
+}
+
+func logInsecureTLSWarning(ctx context.Context, insecureTLS bool) {
+	if insecureTLS {
+		tflog.Warn(ctx, "TLS certificate verification is disabled")
+	}
 }
