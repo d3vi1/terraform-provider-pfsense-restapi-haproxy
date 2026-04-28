@@ -187,6 +187,48 @@ func TestHaproxyBackendActionResourceReadMatchesHTTPActionWithInternalNames(t *t
 	}
 }
 
+func TestHaproxyBackendActionResourceReadSkipsUnsupportedSiblingActions(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case http.MethodGet + " /api/v2/services/haproxy/backends":
+			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":42,"name":"app_backend"}]}`))
+		case http.MethodGet + " /api/v2/services/haproxy/backend/actions":
+			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":4,"action":"future-action","acl":"other_acl","future-field":"value"},{"id":7,"action":"use_server","acl":"host_acl","server":"app01"}]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	actionResource := &haproxyBackendActionResource{
+		client: pfsense.NewClient(pfsense.Config{Endpoint: server.URL, APIKey: "test-key"}),
+	}
+	schema := haproxyBackendActionResourceSchema(t)
+	stateModel := backendUseServerActionModel()
+
+	resp := resource.ReadResponse{
+		State: testResourceState(t, schema, stateModel),
+	}
+	actionResource.Read(context.Background(), resource.ReadRequest{
+		State: testResourceState(t, schema, stateModel),
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %#v", resp.Diagnostics)
+	}
+
+	var state haproxyBackendActionModel
+	diags := resp.State.Get(context.Background(), &state)
+	if diags.HasError() {
+		t.Fatalf("state get diagnostics: %#v", diags)
+	}
+	if state.ID.ValueString() != "app_backend/route_app01" || state.Action.ValueString() != "use_server" || state.Server.ValueString() != "app01" {
+		t.Fatalf("supported action was not matched after unsupported sibling: %#v", state)
+	}
+}
+
 func TestHaproxyBackendActionResourceUpdateReordersWithPlacement(t *testing.T) {
 	t.Parallel()
 

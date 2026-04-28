@@ -772,7 +772,7 @@ func findHaproxyBackendAction(ctx context.Context, client *pfsense.Client, paren
 	for index, payload := range payloads {
 		candidate, err := haproxyBackendActionPayloadFromAPI(payload)
 		if err != nil {
-			return haproxyBackendActionModel{}, "", false, err
+			continue
 		}
 		if !candidate.equal(desired) {
 			continue
