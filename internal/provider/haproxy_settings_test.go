@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,6 +73,62 @@ func TestProviderRegistersHaproxySettings(t *testing.T) {
 	}
 	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_settings") {
 		t.Fatalf("pfsense_haproxy_settings data source was not registered")
+	}
+}
+
+func TestImplementedResourcesHaveImportCoverage(t *testing.T) {
+	provider := &haproxyProvider{}
+	resourceByType := map[string]resource.Resource{}
+
+	for _, constructor := range provider.Resources(context.Background()) {
+		res := constructor()
+		var metadata resource.MetadataResponse
+		res.Metadata(context.Background(), resource.MetadataRequest{}, &metadata)
+		if metadata.TypeName == "" {
+			t.Fatalf("registered resource %T did not report a type name", res)
+		}
+		if _, exists := resourceByType[metadata.TypeName]; exists {
+			t.Fatalf("duplicate resource registration for %s", metadata.TypeName)
+		}
+		resourceByType[metadata.TypeName] = res
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readmeText := string(readme)
+
+	expectedImportableResources := []string{
+		"pfsense_haproxy_apply",
+		"pfsense_haproxy_backend",
+		"pfsense_haproxy_backend_acl",
+		"pfsense_haproxy_backend_action",
+		"pfsense_haproxy_backend_server",
+		"pfsense_haproxy_frontend",
+		"pfsense_haproxy_frontend_acl",
+		"pfsense_haproxy_frontend_action",
+		"pfsense_haproxy_frontend_address",
+		"pfsense_haproxy_frontend_certificate",
+		"pfsense_haproxy_settings",
+	}
+
+	for _, typeName := range expectedImportableResources {
+		res, ok := resourceByType[typeName]
+		if !ok {
+			t.Fatalf("%s resource was not registered", typeName)
+		}
+		if _, ok := res.(resource.ResourceWithImportState); !ok {
+			t.Fatalf("%s does not implement ResourceWithImportState", typeName)
+		}
+		if !strings.Contains(readmeText, "terraform import "+typeName) {
+			t.Fatalf("README.md does not document terraform import syntax for %s", typeName)
+		}
+		delete(resourceByType, typeName)
+	}
+
+	for typeName := range resourceByType {
+		t.Fatalf("%s is registered without import coverage expectations", typeName)
 	}
 }
 

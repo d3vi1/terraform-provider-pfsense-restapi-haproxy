@@ -116,6 +116,12 @@ terraform import pfsense_haproxy_settings.global settings
 - Delete removes Terraform state only.
 - Import uses the fixed ID `apply`.
 
+Import example:
+
+```bash
+terraform import pfsense_haproxy_apply.global apply
+```
+
 Example:
 
 ```hcl
@@ -477,6 +483,11 @@ make testacc
 ```
 
 `make testacc` requires real pfSense credentials and must be run only against an approved test target unless the issue explicitly targets production.
+
+Import coverage is intentionally all-or-nothing for implemented resources:
+every registered resource implements Terraform import state, has a documented
+`terraform import` command, and has unit coverage for its import ID parser.
+Registered data sources are lookup-only and cannot be imported.
 
 ## Resources
 
