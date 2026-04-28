@@ -357,6 +357,33 @@ func TestHaproxyFrontendResourceUpdateResolvesAPIIDAndPatchesChangedFieldsOnly(t
 	}
 }
 
+func TestHaproxyFrontendResourceUpdateClearsHTTPOnlyFieldsWhenTypeSwitchesToTCP(t *testing.T) {
+	t.Parallel()
+
+	prior := nullHaproxyFrontendModel()
+	prior.ID = types.StringValue("app_frontend")
+	prior.Name = types.StringValue("app_frontend")
+	prior.Type = types.StringValue("http")
+	prior.ForwardFor = types.BoolValue(true)
+	prior.HTTPClose = types.StringValue("http-server-close")
+
+	plan := prior
+	plan.Type = types.StringValue("tcp")
+	plan.ForwardFor = types.BoolUnknown()
+	plan.HTTPClose = types.StringUnknown()
+
+	patch := buildHaproxyFrontendPatch(plan, prior, "42")
+	if patch["type"] != "tcp" {
+		t.Fatalf("patch type = %#v, want tcp", patch["type"])
+	}
+	if value, ok := patch["forwardfor"]; !ok || value != nil {
+		t.Fatalf("patch forwardfor = %#v, want explicit null", patch)
+	}
+	if value, ok := patch["httpclose"]; !ok || value != nil {
+		t.Fatalf("patch httpclose = %#v, want explicit null", patch)
+	}
+}
+
 func TestHaproxyFrontendResourceUpdateSkipsPatchWithoutChanges(t *testing.T) {
 	t.Parallel()
 
@@ -561,6 +588,12 @@ func TestHaproxyFrontendValidation(t *testing.T) {
 			model := valid
 			model.Type = types.StringValue("tcp")
 			model.ForwardFor = types.BoolValue(true)
+			return model
+		}(),
+		"forwardfor false tcp": func() haproxyFrontendModel {
+			model := valid
+			model.Type = types.StringValue("tcp")
+			model.ForwardFor = types.BoolValue(false)
 			return model
 		}(),
 		"negative max connections": func() haproxyFrontendModel {
