@@ -86,3 +86,16 @@ resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
 ```
 
 The exact schemas will be finalized from pfSense REST API endpoint responses during Milestone 1.
+
+## Schema inventory
+
+HAProxy endpoint inventory and provisional resource schema decisions are tracked
+under `docs/schema/`. Live schema captures must be generated with:
+
+```bash
+python3 scripts/capture_haproxy_schema.py --schema both --output-dir docs/schema
+```
+
+Only redacted `haproxy-*.redacted.json` artifacts may be committed. Raw captures,
+credentials, certificates, API tokens, and pfSense config backups must stay out
+of Git.

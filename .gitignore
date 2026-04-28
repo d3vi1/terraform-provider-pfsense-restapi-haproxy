@@ -4,6 +4,10 @@ dist/
 coverage.out
 *.test
 
+# Python helper caches
+__pycache__/
+*.py[cod]
+
 # Terraform
 .terraform/
 *.tfstate
@@ -22,6 +26,13 @@ pfsense-test-config.yaml
 *.p12
 config.xml
 config-*.xml
+
+# Raw schema captures
+docs/schema/raw/
+docs/fixtures/raw/
+docs/schema/**/*.raw.json
+docs/fixtures/**/*.raw.json
+*.unredacted.json
 
 # Editor/OS
 .DS_Store
