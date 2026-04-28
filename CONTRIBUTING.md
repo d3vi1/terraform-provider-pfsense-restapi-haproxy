@@ -19,3 +19,11 @@ make testacc
 ```
 
 Do not commit credentials, pfSense backups, certificates, or VPN material.
+
+## Schema and fixture artifacts
+
+Use `scripts/capture_haproxy_schema.py` for UAT schema capture. Commit only
+reviewed, redacted JSON outputs and documentation under `docs/schema/`.
+
+Never commit raw schema captures, live HAProxy configuration dumps, API keys,
+passwords, JWTs, certificates, private keys, or pfSense `config.xml` backups.
