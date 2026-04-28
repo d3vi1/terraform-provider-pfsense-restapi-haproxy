@@ -21,14 +21,14 @@ through GitHub issues and milestones.
 ```hcl
 terraform {
   required_providers {
-    pfsense-haproxy = {
+    pfsense = {
       source  = "d3vi1/pfsense-restapi-haproxy"
       version = ">= 0.1.0"
     }
   }
 }
 
-provider "pfsense-haproxy" {
+provider "pfsense" {
   endpoint     = "https://pfsense.example.com"
   api_key      = var.pfsense_api_key
   insecure_tls = true

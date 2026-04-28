@@ -1,12 +1,12 @@
 terraform {
   required_providers {
-    pfsense-haproxy = {
+    pfsense = {
       source = "d3vi1/pfsense-restapi-haproxy"
     }
   }
 }
 
-provider "pfsense-haproxy" {
+provider "pfsense" {
   endpoint     = var.pfsense_endpoint
   api_key      = var.pfsense_api_key
   insecure_tls = true
