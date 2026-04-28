@@ -43,6 +43,12 @@ func TestProviderRegistersHaproxySettings(t *testing.T) {
 	if !resourceTypeRegistered(resources, "pfsense_haproxy_frontend") {
 		t.Fatalf("pfsense_haproxy_frontend resource was not registered")
 	}
+	if !resourceTypeRegistered(resources, "pfsense_haproxy_frontend_acl") {
+		t.Fatalf("pfsense_haproxy_frontend_acl resource was not registered")
+	}
+	if !resourceTypeRegistered(resources, "pfsense_haproxy_frontend_action") {
+		t.Fatalf("pfsense_haproxy_frontend_action resource was not registered")
+	}
 	if !resourceTypeRegistered(resources, "pfsense_haproxy_frontend_address") {
 		t.Fatalf("pfsense_haproxy_frontend_address resource was not registered")
 	}

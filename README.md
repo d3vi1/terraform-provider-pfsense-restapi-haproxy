@@ -15,6 +15,9 @@ Terraform-only `key` plus exact payload matching.
 `pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name,
 and `pfsense_haproxy_frontend_address` manages frontend bind/listen address
 children by parent/frontend name, listen address, custom address, and port.
+Frontend ACLs and frontend actions are implemented as ordered child resources;
+ACLs use `frontend_name/name` as their stable ID, while anonymous actions use a
+Terraform-only `key` plus exact payload matching.
 `pfsense_haproxy_frontend_certificate` attaches existing pfSense certificate
 references to frontends without managing certificate or private key material.
 Backend and backend server lookup data sources are available for read-only
@@ -301,9 +304,10 @@ The resource schema is intentionally conservative: it exposes required `name`
 and `type` plus selected scalar fields for basic HTTP/TCP frontend lifecycle.
 Only `http` and `tcp` are supported for `type`; any separate `https` frontend
 mode remains deferred until UAT confirms how it interacts with frontend address
-SSL offload and certificate attachments. Addresses, ACLs, actions, error files,
-`advanced`, `advanced_bind`, and default certificate ownership remain out of
-scope for this top-level frontend resource.
+SSL offload and certificate attachments. Addresses, ACLs, actions, and
+certificates are separate child resources. Error files, `advanced`,
+`advanced_bind`, and default certificate ownership remain out of scope for this
+top-level frontend resource.
 
 UAT validation is still pending. The implementation assumes
 `GET /services/haproxy/frontends?name=...` returns frontend objects with `id`,
@@ -346,6 +350,74 @@ returns frontend address objects with `id`, `extaddr`, `extaddr_custom`, and
 contract; and frontend address writes only mark HAProxy configuration pending
 until a separate `pfsense_haproxy_apply` resource is used.
 
+## HAProxy frontend ACLs
+
+`resource "pfsense_haproxy_frontend_acl"` manages ordered frontend ACL children:
+
+- Create re-queries the parent frontend by name, checks for an existing ACL with
+  `GET /services/haproxy/frontend/acls?parent_id=...&name=...`, then sends
+  `POST /services/haproxy/frontend/acl`.
+- Read re-queries the parent frontend by name, finds the ACL by exact name, and
+  records `position` from the ordered plural response.
+- Update re-queries the parent frontend and ACL before sending
+  `PATCH /services/haproxy/frontend/acl` with current `parent_id`, child `id`,
+  changed scalar fields, and `placement` when `position` changes.
+- Delete re-queries current parent/child IDs before sending
+  `DELETE /services/haproxy/frontend/acl?parent_id=...&id=...`.
+- Import uses `frontend_name/acl_name`, for example
+  `terraform import pfsense_haproxy_frontend_acl.host app_frontend/host_acl`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses `frontend_name/name` as the stable ID. `position` is
+zero-based and maps to pfREST `placement` on create/update; when omitted,
+Terraform reads the live order from the plural ACL list. Duplicate ACL names
+under one frontend are rejected because they cannot be managed safely by
+natural key.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/frontend/acls?parent_id=...&name=...` returns ACL objects
+with `id`, `name`, `expression`, and `value`; full plural reads preserve
+frontend ACL order; and frontend ACL writes only mark HAProxy configuration
+pending until a separate `pfsense_haproxy_apply` resource is used.
+
+## HAProxy frontend actions
+
+`resource "pfsense_haproxy_frontend_action"` manages ordered frontend action
+children:
+
+- `key` is a Terraform-only identity component. It is never sent to pfSense.
+- Create/read/update/delete always re-query the parent frontend by name.
+- Live actions are matched by normalized action payload fields: `action`, `acl`,
+  and the conditional field(s) required by the selected action. Transient `id`,
+  `parent_id`, `position`, and `key` are excluded from matching.
+- Duplicate live payload matches return a diagnostic requiring cleanup or a more
+  unique action payload before Terraform can manage the action.
+- `position` is zero-based and maps to pfREST `placement` on create/update.
+- Import uses `frontend_name/key`, for example
+  `terraform import pfsense_haproxy_frontend_action.route app_frontend/route_app`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Supported frontend action choices follow the pfREST `HAProxyFrontendAction`
+model, including `use_backend`, `custom`, HTTP request/response mutations, HTTP
+after-response mutations, and TCP request/response actions. The route action is
+`use_backend` and its conditional target field is `backend`. Conditional fields
+are validated conservatively: Terraform requires the field(s) pfREST marks
+required for the selected action and rejects non-null fields that are not
+applicable to that action.
+
+Because pfSense frontend actions do not expose a stable name, import
+initializes only `frontend_name/key`; the resource configuration must include
+the exact unique payload so the next refresh/apply can match the live action. If
+multiple existing actions have the same normalized payload, clean up duplicates
+before importing.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/frontend/actions?parent_id=...` returns ordered frontend
+action objects with transient `id` and action payload fields; dynamic pfREST
+internal names are action-prefixed, with `lua_function` mapped to
+`lua-function`; and frontend action writes only mark HAProxy configuration
+pending until a separate `pfsense_haproxy_apply` resource is used.
+
 ## HAProxy frontend certificates
 
 `resource "pfsense_haproxy_frontend_certificate"` attaches existing pfSense
@@ -381,9 +453,8 @@ attachment writes only mark HAProxy configuration pending until a separate
 
 ## Deferred HAProxy files
 
-`pfsense_haproxy_file` is intentionally deferred out of M4. The current M4
-resources for frontends, frontend addresses, and frontend certificate
-attachments do not require `HAProxyFile.content` for their lifecycle.
+`pfsense_haproxy_file` is intentionally deferred out of M4. The current
+frontend resources do not require `HAProxyFile.content` for their lifecycle.
 
 The REST API's `HAProxyFile.content` field can carry custom error pages,
 snippets, or other HAProxy text that may contain private material. Before this
@@ -415,6 +486,8 @@ make testacc
 - `pfsense_haproxy_backend_action`
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
+- `pfsense_haproxy_frontend_acl`
+- `pfsense_haproxy_frontend_action`
 - `pfsense_haproxy_frontend_address`
 - `pfsense_haproxy_frontend_certificate`
 - `pfsense_haproxy_settings`
@@ -427,9 +500,6 @@ make testacc
 - `pfsense_haproxy_settings`
 
 ## Planned and deferred resources
-
-- `pfsense_haproxy_frontend_acl`
-- `pfsense_haproxy_frontend_action`
 
 Deferred pending UAT and security-model gates:
 
@@ -500,6 +570,23 @@ resource "pfsense_haproxy_frontend_certificate" "addressvalidator_https" {
   ssl_certificate = "existing_uat_certificate_ref"
 }
 
+resource "pfsense_haproxy_frontend_acl" "addressvalidator_sni" {
+  frontend_name = pfsense_haproxy_frontend.addressvalidator.name
+  name          = "addressvalidator_sni"
+  expression    = "ssl_sni_matches"
+  value         = "addressvalidator-uat.example.com"
+  position      = 0
+}
+
+resource "pfsense_haproxy_frontend_action" "addressvalidator_route" {
+  frontend_name = pfsense_haproxy_frontend.addressvalidator.name
+  key           = "route_addressvalidator"
+  action        = "use_backend"
+  acl           = pfsense_haproxy_frontend_acl.addressvalidator_sni.name
+  backend       = pfsense_haproxy_backend.addressvalidator.name
+  position      = 0
+}
+
 resource "pfsense_haproxy_apply" "addressvalidator" {
   depends_on = [
     pfsense_haproxy_backend.addressvalidator,
@@ -509,6 +596,8 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
     pfsense_haproxy_frontend.addressvalidator,
     pfsense_haproxy_frontend_address.addressvalidator_https,
     pfsense_haproxy_frontend_certificate.addressvalidator_https,
+    pfsense_haproxy_frontend_acl.addressvalidator_sni,
+    pfsense_haproxy_frontend_action.addressvalidator_route,
   ]
 
   triggers = {
@@ -567,6 +656,23 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
     frontend_certificates = sha1(jsonencode({
       https = {
         ssl_certificate = pfsense_haproxy_frontend_certificate.addressvalidator_https.ssl_certificate
+      }
+    }))
+    frontend_acls = sha1(jsonencode({
+      sni = {
+        name       = pfsense_haproxy_frontend_acl.addressvalidator_sni.name
+        expression = pfsense_haproxy_frontend_acl.addressvalidator_sni.expression
+        value      = pfsense_haproxy_frontend_acl.addressvalidator_sni.value
+        position   = pfsense_haproxy_frontend_acl.addressvalidator_sni.position
+      }
+    }))
+    frontend_actions = sha1(jsonencode({
+      route = {
+        key      = pfsense_haproxy_frontend_action.addressvalidator_route.key
+        action   = pfsense_haproxy_frontend_action.addressvalidator_route.action
+        acl      = pfsense_haproxy_frontend_action.addressvalidator_route.acl
+        backend  = pfsense_haproxy_frontend_action.addressvalidator_route.backend
+        position = pfsense_haproxy_frontend_action.addressvalidator_route.position
       }
     }))
   }
