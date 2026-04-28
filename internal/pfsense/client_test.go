@@ -255,6 +255,102 @@ func TestAPIErrorResponsesAreActionable(t *testing.T) {
 	}
 }
 
+func TestEnvelopeResponseDecodesData(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"code": 200,
+			"status": "ok",
+			"response_id": "resp-success",
+			"message": "ok",
+			"data": {"enabled": true, "name": "haproxy"}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	var response struct {
+		Enabled bool   `json:"enabled"`
+		Name    string `json:"name"`
+	}
+	if err := client.Get(context.Background(), "/services/haproxy/settings", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !response.Enabled || response.Name != "haproxy" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestEnvelopeErrorWithHTTPSuccessIsActionable(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"code": 422,
+			"status": "error",
+			"response_id": "resp-validation",
+			"message": "invalid backend name",
+			"data": {"field": "name"}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	err := client.Post(context.Background(), "/services/haproxy/backend", map[string]string{"name": ""}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d", apiErr.StatusCode)
+	}
+	if apiErr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("envelope code = %d", apiErr.Code)
+	}
+	if apiErr.ResponseID != "resp-validation" {
+		t.Fatalf("response id = %q", apiErr.ResponseID)
+	}
+	for _, want := range []string{"error envelope", "invalid backend name", "response_id: resp-validation"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
+func TestEnvelopeErrorWithHTTPFailureIncludesResponseID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{
+			"code": 403,
+			"status": "error",
+			"response_id": "resp-forbidden",
+			"message": {"error": "missing HAProxy privilege"}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	err := client.Get(context.Background(), "/services/haproxy/frontends", nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	for _, want := range []string{"403 Forbidden", "missing HAProxy privilege", "response_id: resp-forbidden"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
 func TestAPIErrorIncludesPlainTextBody(t *testing.T) {
 	t.Parallel()
 

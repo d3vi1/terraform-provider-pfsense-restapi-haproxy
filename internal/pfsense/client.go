@@ -39,8 +39,10 @@ type Client struct {
 // APIError describes a non-2xx response from pfSense-pkg-RESTAPI.
 type APIError struct {
 	StatusCode int
+	Code       int
 	Method     string
 	Path       string
+	ResponseID string
 	Message    string
 	Body       string
 }
@@ -54,6 +56,9 @@ func (e *APIError) Error() string {
 	message := fmt.Sprintf("pfSense REST API %s %s returned %s", e.Method, e.Path, status)
 	if e.Message != "" {
 		message = fmt.Sprintf("%s: %s", message, e.Message)
+	}
+	if e.ResponseID != "" {
+		message = fmt.Sprintf("%s (response_id: %s)", message, e.ResponseID)
 	}
 
 	body := strings.TrimSpace(e.Body)
@@ -156,16 +161,31 @@ func (c *Client) Do(ctx context.Context, method string, path string, in any, out
 		return newAPIError(resp, method, displayPath)
 	}
 
-	if out == nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
-	}
-
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read %s %s response: %w", method, displayPath, err)
 	}
 	if len(bytes.TrimSpace(responseBody)) == 0 {
+		return nil
+	}
+
+	if envelope, ok := parseEnvelope(responseBody); ok {
+		if envelope.Code >= 400 {
+			return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope)
+		}
+		if out == nil {
+			return nil
+		}
+		if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+			return nil
+		}
+		if err := json.Unmarshal(envelope.Data, out); err != nil {
+			return fmt.Errorf("decode %s %s response data: %w", method, displayPath, err)
+		}
+		return nil
+	}
+
+	if out == nil {
 		return nil
 	}
 	if err := json.Unmarshal(responseBody, out); err != nil {
@@ -254,6 +274,10 @@ func newAPIError(resp *http.Response, method string, path string) error {
 	body := strings.TrimSpace(string(bodyBytes))
 
 	message := statusGuidance(resp.StatusCode)
+	envelope, hasEnvelope := parseEnvelope(bodyBytes)
+	if hasEnvelope && envelope.Code >= 400 {
+		return envelopeAPIError(resp.StatusCode, method, path, bodyBytes, envelope)
+	}
 	if detail := errorDetail(body); detail != "" {
 		message = message + ": " + detail
 	}
@@ -267,6 +291,60 @@ func newAPIError(resp *http.Response, method string, path string) error {
 		Path:       path,
 		Message:    message,
 		Body:       body,
+	}
+}
+
+type responseEnvelope struct {
+	Code       int             `json:"code"`
+	Status     string          `json:"status"`
+	ResponseID string          `json:"response_id"`
+	Message    json.RawMessage `json:"message"`
+	Data       json.RawMessage `json:"data"`
+	Links      json.RawMessage `json:"_links"`
+}
+
+func parseEnvelope(body []byte) (responseEnvelope, bool) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return responseEnvelope{}, false
+	}
+
+	envelopeMarkers := []string{"code", "status", "response_id"}
+	hasEnvelopeMarker := false
+	for _, key := range envelopeMarkers {
+		if _, ok := raw[key]; ok {
+			hasEnvelopeMarker = true
+			break
+		}
+	}
+	if !hasEnvelopeMarker {
+		return responseEnvelope{}, false
+	}
+
+	var envelope responseEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return responseEnvelope{}, false
+	}
+	return envelope, true
+}
+
+func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope) error {
+	message := statusGuidance(statusCode)
+	if statusCode >= http.StatusOK && statusCode <= 299 {
+		message = "pfSense REST API returned an error envelope"
+	}
+	if detail := detailFromRawMessage(envelope.Message); detail != "" {
+		message = message + ": " + detail
+	}
+
+	return &APIError{
+		StatusCode: statusCode,
+		Code:       envelope.Code,
+		Method:     method,
+		Path:       path,
+		ResponseID: envelope.ResponseID,
+		Message:    message,
+		Body:       strings.TrimSpace(string(body)),
 	}
 }
 
@@ -305,6 +383,18 @@ func errorDetail(body string) string {
 	}
 
 	return truncate(body, 500)
+}
+
+func detailFromRawMessage(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return truncate(string(raw), 500)
+	}
+	return truncate(detailFromValue(value), 500)
 }
 
 func detailFromValue(value any) string {
