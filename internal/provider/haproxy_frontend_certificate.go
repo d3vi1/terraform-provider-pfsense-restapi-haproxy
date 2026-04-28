@@ -12,6 +12,7 @@ import (
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -251,10 +252,37 @@ func haproxyFrontendCertificateResourceSchemaAttributes() map[string]resourcesch
 		"ssl_certificate": resourceschema.StringAttribute{
 			Required:    true,
 			Description: "Existing pfSense certificate reference to attach to the frontend. This must be a reference/name only, not PEM certificate or private key material. Terraform treats this as part of the natural key and requires replacement if it changes.",
+			Validators: []validator.String{
+				haproxyFrontendCertificateReferenceValidator{},
+			},
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.RequiresReplace(),
 			},
 		},
+	}
+}
+
+type haproxyFrontendCertificateReferenceValidator struct{}
+
+func (v haproxyFrontendCertificateReferenceValidator) Description(context.Context) string {
+	return "value must be an existing pfSense certificate reference and cannot be certificate or private key material"
+}
+
+func (v haproxyFrontendCertificateReferenceValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v haproxyFrontendCertificateReferenceValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	if _, err := haproxyFrontendCertificateSSLCertificate(req.ConfigValue); err != nil {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid HAProxy frontend certificate reference",
+			err.Error(),
+		)
 	}
 }
 

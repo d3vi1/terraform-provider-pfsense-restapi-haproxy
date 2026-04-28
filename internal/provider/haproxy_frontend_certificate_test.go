@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/d3vi1/terraform-provider-pfsense-restapi-haproxy/internal/pfsense"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -451,6 +453,40 @@ func TestHaproxyFrontendCertificateValidation(t *testing.T) {
 				t.Fatalf("expected validation error")
 			}
 		})
+	}
+}
+
+func TestHaproxyFrontendCertificateReferenceValidatorRejectsSecretMaterialAtConfigValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []types.String{
+		types.StringValue(" existing_cert_ref"),
+		types.StringValue("existing/cert"),
+		types.StringValue("existing\ncert"),
+		types.StringValue("-----BEGIN CERTIFICATE-----"),
+		types.StringValue("-----BEGIN PRIVATE KEY-----"),
+	}
+
+	for _, value := range tests {
+		t.Run(value.ValueString(), func(t *testing.T) {
+			var resp validator.StringResponse
+			haproxyFrontendCertificateReferenceValidator{}.ValidateString(context.Background(), validator.StringRequest{
+				Path:        path.Root("ssl_certificate"),
+				ConfigValue: value,
+			}, &resp)
+			if !resp.Diagnostics.HasError() {
+				t.Fatalf("expected validator diagnostic for %q", value.ValueString())
+			}
+		})
+	}
+
+	var validResp validator.StringResponse
+	haproxyFrontendCertificateReferenceValidator{}.ValidateString(context.Background(), validator.StringRequest{
+		Path:        path.Root("ssl_certificate"),
+		ConfigValue: types.StringValue("existing_cert_ref"),
+	}, &validResp)
+	if validResp.Diagnostics.HasError() {
+		t.Fatalf("valid certificate reference rejected: %#v", validResp.Diagnostics)
 	}
 }
 
