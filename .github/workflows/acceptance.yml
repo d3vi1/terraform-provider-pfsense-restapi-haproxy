@@ -41,8 +41,7 @@ jobs:
             older_run="$(
               gh api --paginate -X GET "repos/${REPOSITORY}/actions/workflows/acceptance.yml/runs" \
                 -f per_page=100 \
-                --jq ".workflow_runs[] | select(.id < (${RUN_ID} | tonumber) and .status != \"completed\") | .id" \
-                | head -n 1
+                --jq "[.workflow_runs[] | select(.id < (${RUN_ID} | tonumber) and .status != \"completed\") | .id][0] // \"\""
             )"
             if [ -z "${older_run}" ]; then
               break
