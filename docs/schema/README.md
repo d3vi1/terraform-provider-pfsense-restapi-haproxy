@@ -135,3 +135,13 @@ the current child ID before delete, and manages only the existing
 `ssl_certificate` reference. The resource intentionally does not expose
 certificate bodies, private key material, PEM content, placement controls,
 advanced fields, or a PATCH update path.
+
+For M4-04, `pfsense_haproxy_file` is deferred out of M4. The implemented M4
+frontend, frontend address, and frontend certificate resources do not require
+`HAProxyFile.content`. That field is secret-bearing because HAProxy file
+payloads can contain custom error pages, snippets, or other text with private
+material. A future implementation must first prove a managed error-file or
+snippet dependency, confirm `/services/haproxy/file` and
+`/services/haproxy/files` response and import semantics on UAT, and select a
+security model between sensitive Terraform state content and write-only content
+plus a caller-supplied content hash for drift detection.

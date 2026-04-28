@@ -50,7 +50,7 @@ Primary references:
 | `pfsense_haproxy_frontend_action` | HAProxyFrontendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under frontend. Conditional fields need UAT examples before strict Terraform validation. |
 | `pfsense_haproxy_frontend_certificate` | HAProxyFrontendCertificate | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/certificate`; `GET /frontend/certificates` | Create requires `parent_id`; schema exposes `ssl_certificate`. | Implemented in M4-03 as a frontend child resource using `frontend_name/ssl_certificate` as Terraform's stable natural key. Before create/delete, resolve the current parent frontend ID by frontend name; before delete, resolve the current child ID by exact certificate reference under that parent. Manage only existing `ssl_certificate` references; reject PEM/private-key-looking values; do not expose certificate bodies, private keys, placement, advanced fields, or a PATCH update path. |
 | `pfsense_haproxy_frontend_error_file` | HAProxyFrontendErrorFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/error_file` | Create requires `parent_id`, `errorcode`, `errorfile`. | Child resource under frontend. Consider later if required for managed routes. |
-| `pfsense_haproxy_file` | HAProxyFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/file`; `GET /files` | Create requires `name`, `content`. Patch requires `id`. | Defer until routes require managed HAProxy files. `content` must be sensitive in Terraform state and excluded from schema fixtures. |
+| `pfsense_haproxy_file` | HAProxyFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/file`; `GET /files` | Create requires `name`, `content`. Patch requires `id`. | Deferred out of M4. Current M4 frontend, frontend address, and frontend certificate resources do not require `HAProxyFile.content`; the field can carry secret-bearing error pages, snippets, or HAProxy text. Future implementation is gated on a managed error-file/snippet dependency, UAT confirmation of `/services/haproxy/file` and `/services/haproxy/files` response/import semantics, and an explicit security model: either sensitive Terraform state content or write-only content with a caller-supplied content hash for drift detection. |
 | `pfsense_haproxy_settings_dns_resolver` | HAProxyDNSResolver | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/settings/dns_resolver` | Create requires `name`, `server`. Patch requires `id`. | Model as settings child only if needed. Pending UAT confirmation of nesting and IDs. |
 | `pfsense_haproxy_settings_email_mailer` | HAProxyEmailMailer | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/settings/email_mailer` | Create requires `name`, `mailserver`. Patch requires `id`. | Model as settings child only if needed. Pending UAT confirmation of nesting and IDs. |
 | `pfsense_haproxy_apply` | HAProxyApply | `GET/POST /api/v2/services/haproxy/apply` | `GET` reports `applied`; `POST` applies pending changes. | Implemented in M2-02 as a status data source and singleton action resource with fixed ID `apply`, user-controlled `triggers`, POST guarded by the shared client write guard, bounded polling, state-only delete, and no hidden apply behavior in other resources. |
@@ -97,6 +97,16 @@ Primary references:
 - Confirm whether frontend certificate attachments support ordering/placement
   semantics on UAT. The first implementation intentionally does not set
   placement and treats changes as replacement-only.
+- Confirm `/api/v2/services/haproxy/file` and
+  `/api/v2/services/haproxy/files` behavior before implementing
+  `pfsense_haproxy_file`, including object identity, whether reads return
+  `content`, whether imports can reconstruct state without storing raw content,
+  and create/update response envelopes.
+- Confirm whether managed frontend or backend error-file/snippet resources need
+  first-class HAProxy file ownership before implementing `pfsense_haproxy_file`.
+- Select the HAProxy file security model before implementation: sensitive
+  Terraform state content or write-only content plus caller-supplied content
+  hash for drift detection.
 - Whether published conditional fields such as `agent_port` and
   `persist_cookie_name` are required only when their enabling booleans are true
   on UAT.
