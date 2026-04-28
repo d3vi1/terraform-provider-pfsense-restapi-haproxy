@@ -107,3 +107,21 @@ contracts as their resources but do not expose transient pfSense REST object
 IDs. Backend data source reads do not require a REST `id`; backend server data
 source reads require the parent backend `id` only to query children and do not
 require the child REST `id`.
+
+For M4-01, `pfsense_haproxy_frontend` uses the upstream
+`HAProxyFrontend.inc` model as a conservative implementation reference.
+Terraform stores frontend names as stable natural keys, resolves the current
+pfSense object ID from `GET /services/haproxy/frontends?name=...` before
+update/delete, and manages only selected HTTP/TCP scalar fields. Addresses,
+ACLs, actions, certificates, error files, `advanced`, `advanced_bind`, and
+default certificate ownership remain pending UAT confirmation and separate
+ownership decisions.
+
+For M4-02, `pfsense_haproxy_frontend_address` uses the upstream
+`HAProxyFrontendAddress.inc` model as a conservative implementation reference.
+Terraform stores `frontend_name/extaddr/extaddr_custom_or_-/extaddr_port` as a
+stable natural key, resolves the current parent frontend ID before every child
+write, resolves the current child ID before update/delete, and manages only
+`extaddr`, `extaddr_custom`, `extaddr_port`, and `extaddr_ssl`. The
+`exaddr_advanced` address field and placement/order controls remain pending UAT
+confirmation.
