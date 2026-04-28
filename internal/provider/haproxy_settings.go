@@ -575,6 +575,10 @@ func apiBoolWithLabel(payload map[string]any, label string, names ...string) (ty
 }
 
 func apiInt64(payload map[string]any, names ...string) (types.Int64, error) {
+	return apiInt64WithLabel(payload, "HAProxy settings", names...)
+}
+
+func apiInt64WithLabel(payload map[string]any, label string, names ...string) (types.Int64, error) {
 	value, name, ok := apiValue(payload, names...)
 	if !ok || value == nil {
 		return types.Int64Null(), nil
@@ -583,13 +587,13 @@ func apiInt64(payload map[string]any, names ...string) (types.Int64, error) {
 	switch typed := value.(type) {
 	case float64:
 		if math.Trunc(typed) != typed {
-			return types.Int64Null(), fmt.Errorf("HAProxy settings field %q is %v, not an integer", name, typed)
+			return types.Int64Null(), fmt.Errorf("%s field %q is %v, not an integer", label, name, typed)
 		}
 		return types.Int64Value(int64(typed)), nil
 	case json.Number:
 		intValue, err := typed.Int64()
 		if err != nil {
-			return types.Int64Null(), fmt.Errorf("HAProxy settings field %q is %q, not an integer: %w", name, typed.String(), err)
+			return types.Int64Null(), fmt.Errorf("%s field %q is %q, not an integer: %w", label, name, typed.String(), err)
 		}
 		return types.Int64Value(intValue), nil
 	case string:
@@ -598,15 +602,19 @@ func apiInt64(payload map[string]any, names ...string) (types.Int64, error) {
 		}
 		intValue, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
 		if err != nil {
-			return types.Int64Null(), fmt.Errorf("HAProxy settings field %q is %q, not an integer: %w", name, typed, err)
+			return types.Int64Null(), fmt.Errorf("%s field %q is %q, not an integer: %w", label, name, typed, err)
 		}
 		return types.Int64Value(intValue), nil
 	default:
-		return types.Int64Null(), fmt.Errorf("HAProxy settings field %q has unsupported integer type %T", name, value)
+		return types.Int64Null(), fmt.Errorf("%s field %q has unsupported integer type %T", label, name, value)
 	}
 }
 
 func apiString(payload map[string]any, names ...string) (types.String, error) {
+	return apiStringWithLabel(payload, "HAProxy settings", names...)
+}
+
+func apiStringWithLabel(payload map[string]any, label string, names ...string) (types.String, error) {
 	value, name, ok := apiValue(payload, names...)
 	if !ok || value == nil {
 		return types.StringNull(), nil
@@ -614,7 +622,7 @@ func apiString(payload map[string]any, names ...string) (types.String, error) {
 
 	typed, ok := value.(string)
 	if !ok {
-		return types.StringNull(), fmt.Errorf("HAProxy settings field %q has unsupported string type %T", name, value)
+		return types.StringNull(), fmt.Errorf("%s field %q has unsupported string type %T", label, name, value)
 	}
 
 	return types.StringValue(typed), nil
