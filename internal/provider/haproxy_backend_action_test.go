@@ -441,19 +441,19 @@ func TestHaproxyBackendActionResourceUpdatePatchesChangedActionType(t *testing.T
 func TestHaproxyBackendActionResourceImportThenUpdateMatchesPlanPayload(t *testing.T) {
 	t.Parallel()
 
-	var patchPayload map[string]any
+	var mu sync.Mutex
+	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		mu.Unlock()
+
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
 		case http.MethodGet + " /api/v2/services/haproxy/backends":
 			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":42,"name":"app_backend"}]}`))
 		case http.MethodGet + " /api/v2/services/haproxy/backend/actions":
 			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":7,"action":"use_server","acl":"host_acl","server":"app01"}]}`))
-		case http.MethodPatch + " /api/v2/services/haproxy/backend/action":
-			if err := json.NewDecoder(r.Body).Decode(&patchPayload); err != nil {
-				t.Fatalf("decode PATCH payload: %v", err)
-			}
-			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":null}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.RequestURI())
 		}
@@ -480,11 +480,26 @@ func TestHaproxyBackendActionResourceImportThenUpdateMatchesPlanPayload(t *testi
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("unexpected diagnostics: %#v", resp.Diagnostics)
 	}
-	if patchPayload["parent_id"] != "42" || patchPayload["id"] != "7" || patchPayload["action"] != "use_server" || patchPayload["acl"] != "host_acl" || patchPayload["server"] != "app01" {
-		t.Fatalf("PATCH should identify imported action by plan payload and send full payload, got %#v", patchPayload)
+
+	mu.Lock()
+	gotRequests := append([]string(nil), requests...)
+	mu.Unlock()
+	wantRequests := []string{
+		"GET /api/v2/services/haproxy/backends?name=app_backend",
+		"GET /api/v2/services/haproxy/backend/actions?parent_id=42",
+		"GET /api/v2/services/haproxy/backend/actions?parent_id=42",
 	}
-	if _, ok := patchPayload["key"]; ok {
-		t.Fatalf("PATCH unexpectedly included key: %#v", patchPayload)
+	if !reflect.DeepEqual(gotRequests, wantRequests) {
+		t.Fatalf("requests = %#v, want %#v", gotRequests, wantRequests)
+	}
+
+	var state haproxyBackendActionModel
+	diags := resp.State.Get(context.Background(), &state)
+	if diags.HasError() {
+		t.Fatalf("state get diagnostics: %#v", diags)
+	}
+	if state.ID.ValueString() != "app_backend/route_app01" || state.Action.ValueString() != "use_server" || state.Server.ValueString() != "app01" {
+		t.Fatalf("import adoption did not refresh state from matching payload: %#v", state)
 	}
 }
 

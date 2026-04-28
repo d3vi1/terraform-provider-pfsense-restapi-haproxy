@@ -363,11 +363,13 @@ func (r *haproxyBackendActionResource) Update(ctx context.Context, req resource.
 		return
 	}
 
-	patch := buildHaproxyBackendActionPatch(plan, prior, parentID, actionID, planPayload, !priorHasPayload)
-	if len(patch) > 2 {
-		if err := r.client.Patch(ctx, haproxyBackendActionPath, patch, nil); err != nil {
-			resp.Diagnostics.AddError("Update HAProxy backend action failed", err.Error())
-			return
+	if priorHasPayload {
+		patch := buildHaproxyBackendActionPatch(plan, prior, parentID, actionID, planPayload)
+		if len(patch) > 2 {
+			if err := r.client.Patch(ctx, haproxyBackendActionPath, patch, nil); err != nil {
+				resp.Diagnostics.AddError("Update HAProxy backend action failed", err.Error())
+				return
+			}
 		}
 	}
 
@@ -705,21 +707,11 @@ func buildHaproxyBackendActionCreatePayload(plan haproxyBackendActionModel, pare
 	return request
 }
 
-func buildHaproxyBackendActionPatch(plan haproxyBackendActionModel, prior haproxyBackendActionModel, parentID string, actionID string, planPayload haproxyBackendActionPayload, forcePayload bool) map[string]any {
+func buildHaproxyBackendActionPatch(plan haproxyBackendActionModel, prior haproxyBackendActionModel, parentID string, actionID string, planPayload haproxyBackendActionPayload) map[string]any {
 	patch := map[string]any{
 		"parent_id": parentID,
 		"id":        actionID,
 	}
-	if forcePayload {
-		for name, value := range haproxyBackendActionPayloadToAPI(planPayload) {
-			patch[name] = value
-		}
-		if !plan.Position.IsNull() && !plan.Position.IsUnknown() {
-			patch["placement"] = plan.Position.ValueInt64()
-		}
-		return patch
-	}
-
 	if !plan.Action.Equal(prior.Action) {
 		patch["action"] = planPayload.action
 		for name, value := range haproxyBackendActionPayloadToAPI(planPayload) {
