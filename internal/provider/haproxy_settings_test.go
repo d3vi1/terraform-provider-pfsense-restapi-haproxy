@@ -11,12 +11,14 @@ import (
 	"testing"
 
 	"github.com/d3vi1/terraform-provider-pfsense-restapi-haproxy/internal/pfsense"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	datasourceschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 func TestProviderRegistersHaproxySettings(t *testing.T) {
@@ -39,6 +41,12 @@ func TestProviderRegistersHaproxySettings(t *testing.T) {
 	dataSources := provider.DataSources(context.Background())
 	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_apply") {
 		t.Fatalf("pfsense_haproxy_apply data source was not registered")
+	}
+	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_backend") {
+		t.Fatalf("pfsense_haproxy_backend data source was not registered")
+	}
+	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_backend_server") {
+		t.Fatalf("pfsense_haproxy_backend_server data source was not registered")
 	}
 	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_settings") {
 		t.Fatalf("pfsense_haproxy_settings data source was not registered")
@@ -390,6 +398,56 @@ func testResourceState(t *testing.T, schema resourceschema.Schema, model any) tf
 	}
 
 	return state
+}
+
+func testDataSourceConfig(t *testing.T, schema datasourceschema.Schema, model any) tfsdk.Config {
+	t.Helper()
+
+	ctx := context.Background()
+	attrTypes := make(map[string]tftypes.Type, len(schema.Attributes))
+	rawValues := make(map[string]tftypes.Value, len(schema.Attributes))
+	values := testDataSourceConfigValues(t, model)
+
+	for name, attribute := range schema.Attributes {
+		terraformType := attribute.GetType().TerraformType(ctx)
+		attrTypes[name] = terraformType
+		if value, ok := values[name]; ok {
+			terraformValue, err := value.ToTerraformValue(ctx)
+			if err != nil {
+				t.Fatalf("config value %q conversion failed: %v", name, err)
+			}
+			rawValues[name] = terraformValue
+			continue
+		}
+		rawValues[name] = tftypes.NewValue(terraformType, nil)
+	}
+
+	return tfsdk.Config{
+		Raw:    tftypes.NewValue(tftypes.Object{AttributeTypes: attrTypes}, rawValues),
+		Schema: schema,
+	}
+}
+
+func testDataSourceConfigValues(t *testing.T, model any) map[string]attr.Value {
+	t.Helper()
+
+	switch typed := model.(type) {
+	case haproxyBackendModel:
+		values := typed.attrValues()
+		values["id"] = typed.ID
+		values["name"] = typed.Name
+		return values
+	case haproxyBackendServerModel:
+		values := typed.attrValues()
+		values["id"] = typed.ID
+		values["backend_name"] = typed.BackendName
+		values["name"] = typed.Name
+		values["serverid"] = typed.ServerID
+		return values
+	default:
+		t.Fatalf("unsupported data source config model %T", model)
+		return nil
+	}
 }
 
 func resourceTypeRegistered(resources []func() resource.Resource, typeName string) bool {

@@ -128,6 +128,8 @@ func (p *haproxyProvider) Resources(_ context.Context) []func() resource.Resourc
 func (p *haproxyProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		newHaproxyApplyDataSource,
+		newHaproxyBackendDataSource,
+		newHaproxyBackendServerDataSource,
 		newHaproxySettingsDataSource,
 	}
 }

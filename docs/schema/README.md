@@ -100,3 +100,10 @@ ID before update/delete, and manages only `address`, `port`, `status`, `weight`,
 `ssl`, and `sslserververify`. The read-only `serverid` field is exposed for
 drift visibility. The `advanced` server field remains pending UAT confirmation
 because it can contain arbitrary HAProxy server configuration.
+
+For M3-03, `pfsense_haproxy_backend` and
+`pfsense_haproxy_backend_server` data sources use the same natural-key lookup
+contracts as their resources but do not expose transient pfSense REST object
+IDs. Backend data source reads do not require a REST `id`; backend server data
+source reads require the parent backend `id` only to query children and do not
+require the child REST `id`.
