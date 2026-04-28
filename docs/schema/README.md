@@ -83,3 +83,11 @@ assumed to return an `applied` boolean, and `POST /services/haproxy/apply` is
 assumed to start HAProxy configuration application. The Terraform resource keeps
 apply explicit with user-controlled `triggers`; settings and other durable
 resources must not auto-apply pending changes.
+
+For M3-01, `pfsense_haproxy_backend` uses the upstream `HAProxyBackend.inc`
+model as a conservative implementation reference. Terraform stores backend
+names as stable natural keys, resolves the current pfSense object ID from
+`GET /services/haproxy/backends?name=...` before update/delete, and manages only
+selected scalar fields. Nested backend servers, ACLs, actions, error files,
+stats, and advanced pass-through fields remain pending UAT confirmation and
+separate ownership decisions.

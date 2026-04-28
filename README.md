@@ -5,9 +5,10 @@ Terraform provider for managing the pfSense HAProxy package through `pfSense-pkg
 ## Status
 
 Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
-an import-first ownership model, and `pfsense_haproxy_apply` provides an
-explicit apply/reload lifecycle. Additional HAProxy resources are tracked
-through GitHub issues and milestones.
+an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
+apply/reload lifecycle, and `pfsense_haproxy_backend` manages top-level HAProxy
+backends by natural name. Additional HAProxy resources are tracked through
+GitHub issues and milestones.
 
 ## Requirements
 
@@ -125,6 +126,34 @@ UAT validation is still pending. The implementation assumes the pfREST
 `applied` boolean, and `POST /services/haproxy/apply` starts HAProxy
 configuration application.
 
+## HAProxy backends
+
+`resource "pfsense_haproxy_backend"` manages top-level HAProxy backends:
+
+- Create sends `POST /services/haproxy/backend`.
+- Read resolves by backend name with `GET /services/haproxy/backends?name=...`.
+- Update resolves the current pfSense object ID by name, then sends
+  `PATCH /services/haproxy/backend` with that ID and changed scalar fields.
+- Delete resolves the current pfSense object ID by name, then sends
+  `DELETE /services/haproxy/backend?id=...`.
+- Import uses the backend name, for example
+  `terraform import pfsense_haproxy_backend.app app_backend`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses the backend name as the stable ID because pfSense object
+IDs are implementation details and may not be durable across config rewrites.
+The resource schema is intentionally conservative: it exposes the backend name
+and selected scalar fields needed for common backend creation, including health
+check, agent check, and cookie persistence controls. Nested servers, ACLs,
+actions, error files, stats, and advanced pass-through text remain out of scope
+until their ownership and sensitivity model is validated.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/backends?name=...` returns backend objects with `id` and
+`name`, the singular backend write endpoints accept the documented pfREST
+`HAProxyBackend` scalar field names, and backend writes do not apply pending
+HAProxy changes unless a separate `pfsense_haproxy_apply` resource is used.
+
 ## Development
 
 ```bash
@@ -138,11 +167,11 @@ make testacc
 ## Resources
 
 - `pfsense_haproxy_apply`
+- `pfsense_haproxy_backend`
 - `pfsense_haproxy_settings`
 
 ## Planned resources
 
-- `pfsense_haproxy_backend`
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
 - `pfsense_haproxy_frontend_address`
@@ -155,21 +184,34 @@ make testacc
 
 ```hcl
 resource "pfsense_haproxy_backend" "addressvalidator" {
-  name = "addressvalidator_uat"
-  mode = "http"
+  name                = "addressvalidator_uat"
+  balance             = "roundrobin"
+  connection_timeout  = 30000
+  server_timeout      = 30000
+  check_type          = "HTTP"
+  checkinter          = 2000
+  httpcheck_method    = "GET"
+  monitor_uri         = "/health"
+  monitor_httpversion = "HTTP/1.1"
 }
 
-resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
-  backend = pfsense_haproxy_backend.addressvalidator.name
-  name    = "01-gts-u-addressvalidator"
-  address = "192.168.31.101"
-  port    = 8080
-  check   = true
+resource "pfsense_haproxy_apply" "addressvalidator" {
+  depends_on = [pfsense_haproxy_backend.addressvalidator]
+
+  triggers = {
+    backend = sha1(jsonencode({
+      name           = pfsense_haproxy_backend.addressvalidator.name
+      balance        = pfsense_haproxy_backend.addressvalidator.balance
+      check_type     = pfsense_haproxy_backend.addressvalidator.check_type
+      monitor_uri    = pfsense_haproxy_backend.addressvalidator.monitor_uri
+      server_timeout = pfsense_haproxy_backend.addressvalidator.server_timeout
+    }))
+  }
 }
 ```
 
-Remaining resource schemas will be finalized from approved UAT pfSense REST API
-endpoint responses before production use.
+Backend server resources and remaining schemas will be finalized from approved
+UAT pfSense REST API endpoint responses before production use.
 
 ## Schema inventory
 

@@ -39,7 +39,7 @@ Primary references:
 | Terraform resource | API model | Primary endpoints | Documented create/update shape | Decision |
 |--------------------|-----------|-------------------|--------------------------------|----------|
 | `pfsense_haproxy_settings` | HAProxySettings | `GET/PATCH /api/v2/services/haproxy/settings` | Settings patch body is partial; no create/delete. | Implemented as split model in M2-01: data source reads settings; resource is singleton import-first with fixed ID `settings`, create blocked, update PATCH only, delete state-only, no apply/reload. |
-| `pfsense_haproxy_backend` | HAProxyBackend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend`; `GET /backends` | Create requires `name`, `agent_port`, and `persist_cookie_name` in public OpenAPI. Patch requires `id`. | Durable top-level resource. Keep embedded collections read-only or ignored when managed by child resources. |
+| `pfsense_haproxy_backend` | HAProxyBackend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend`; `GET /backends` | Create requires `name`; public OpenAPI also marks conditional `agent_port` and `persist_cookie_name` as required when agent checks or cookie persistence are enabled. Patch requires `id`. | Implemented in M3-01 as a durable top-level resource using backend `name` as Terraform's stable natural key. Before update/delete, resolve pfSense's current object ID from `GET /backends?name=...`. Manage selected scalar fields only; keep embedded servers, ACLs, actions, error files, stats, and advanced pass-through fields out of scope pending UAT ownership confirmation. |
 | `pfsense_haproxy_backend_server` | HAProxyBackendServer | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/server` | Create requires `parent_id`, `name`, `address`, `port`. Patch requires `parent_id`, `id`. | Child resource under backend. Terraform ID must retain backend API ID and server API ID. |
 | `pfsense_haproxy_backend_acl` | HAProxyBackendACL | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/acl` | Create requires `parent_id`, `name`, `expression`, `value`. Patch requires `parent_id`, `id`. | Child resource under backend. |
 | `pfsense_haproxy_backend_action` | HAProxyBackendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under backend. Conditional fields need UAT examples before strict Terraform validation. |
@@ -69,11 +69,15 @@ Primary references:
   field on UAT and whether any extra error/status fields should be exposed.
 - Confirm `POST /api/v2/services/haproxy/apply` returns quickly enough for the
   current poll defaults or whether UAT needs different timeout guidance.
-- Exact response envelope for create/update/delete, including where object IDs are
-  returned.
+- Exact response envelope for create/update/delete, including whether object IDs
+  are returned directly or must always be rediscovered from plural GET endpoints.
 - Whether UAT uses numeric IDs, string IDs, or mixed IDs for every HAProxy model.
-- Whether published required fields such as `agent_port` and
-  `persist_cookie_name` are truly required by UAT for backend creation.
+- Confirm `GET /api/v2/services/haproxy/backends?name=...` returns exact-name
+  matches or, at minimum, a list containing `id` and `name` fields that can be
+  filtered client-side.
+- Whether published conditional fields such as `agent_port` and
+  `persist_cookie_name` are required only when their enabling booleans are true
+  on UAT.
 - Whether conditional action fields can be omitted when unrelated to the chosen
   action.
 - Whether HAProxy and HAProxy-devel expose identical schema paths on this UAT
