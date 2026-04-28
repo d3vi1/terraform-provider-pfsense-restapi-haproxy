@@ -64,14 +64,6 @@ func testAccPreCheck(t *testing.T) {
 
 func testAccProviderConfig() string {
 	return `
-terraform {
-  required_providers {
-    pfsense = {
-      source = "d3vi1/pfsense-restapi-haproxy"
-    }
-  }
-}
-
 provider "pfsense" {}
 `
 }
