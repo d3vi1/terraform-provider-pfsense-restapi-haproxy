@@ -313,10 +313,14 @@ def run() -> int:
 
     if args.dry_run:
         display_endpoint = endpoint or "https://pfsense.example.invalid"
-        for schema_name, schema_path in schemas:
-            output_path = output_dir / f"haproxy-{schema_name}.redacted.json"
-            print(f"would fetch {build_url(display_endpoint, schema_path)}")
-            print(f"would write {output_path}")
+        try:
+            for schema_name, schema_path in schemas:
+                output_path = output_dir / f"haproxy-{schema_name}.redacted.json"
+                print(f"would fetch {build_url(display_endpoint, schema_path)}")
+                print(f"would write {output_path}")
+        except ValueError as exc:
+            print(f"invalid PFSENSE_ENDPOINT: {exc}", file=sys.stderr)
+            return 2
         print(f"auth method: {auth_method}")
         print(f"insecure tls: {args.insecure}")
         return 0
@@ -339,8 +343,8 @@ def run() -> int:
 
     captured_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for schema_name, schema_path in schemas:
-        url = build_url(endpoint, schema_path)
         try:
+            url = build_url(endpoint, schema_path)
             payload = fetch_json(url, headers, args.insecure, timeout)
             if schema_name == "openapi":
                 filtered = filter_openapi_schema(payload, captured_at)

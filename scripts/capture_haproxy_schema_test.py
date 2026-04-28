@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import subprocess
+import sys
 import unittest
 
 
@@ -54,6 +56,25 @@ class RedactionTests(unittest.TestCase):
             capture_haproxy_schema.redact(payload),
             {"example": capture_haproxy_schema.REDACTION_TEXT},
         )
+
+
+class CLITests(unittest.TestCase):
+    def test_dry_run_invalid_endpoint_returns_user_facing_error(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--dry-run",
+            ],
+            check=False,
+            env={"PFSENSE_ENDPOINT": "not-a-url"},
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid PFSENSE_ENDPOINT", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
