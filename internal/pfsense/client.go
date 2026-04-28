@@ -62,7 +62,7 @@ func (e *APIError) Error() string {
 	}
 
 	body := strings.TrimSpace(e.Body)
-	if body != "" && !strings.Contains(e.Message, body) {
+	if body != "" && !json.Valid([]byte(body)) && !strings.Contains(e.Message, body) {
 		message = fmt.Sprintf("%s (response: %s)", message, truncate(body, 500))
 	}
 
@@ -329,16 +329,21 @@ func parseEnvelope(body []byte) (responseEnvelope, bool) {
 }
 
 func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope) error {
-	message := statusGuidance(statusCode)
+	effectiveStatusCode := statusCode
+	if envelope.Code >= 400 {
+		effectiveStatusCode = envelope.Code
+	}
+
+	message := statusGuidance(effectiveStatusCode)
 	if statusCode >= http.StatusOK && statusCode <= 299 {
-		message = "pfSense REST API returned an error envelope"
+		message = message + "; pfSense REST API returned an error envelope"
 	}
 	if detail := detailFromRawMessage(envelope.Message); detail != "" {
 		message = message + ": " + detail
 	}
 
 	return &APIError{
-		StatusCode: statusCode,
+		StatusCode: effectiveStatusCode,
 		Code:       envelope.Code,
 		Method:     method,
 		Path:       path,

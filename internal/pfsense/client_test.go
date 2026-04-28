@@ -308,7 +308,7 @@ func TestEnvelopeErrorWithHTTPSuccessIsActionable(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected APIError, got %T", err)
 	}
-	if apiErr.StatusCode != http.StatusOK {
+	if apiErr.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("status code = %d", apiErr.StatusCode)
 	}
 	if apiErr.Code != http.StatusUnprocessableEntity {
@@ -317,10 +317,13 @@ func TestEnvelopeErrorWithHTTPSuccessIsActionable(t *testing.T) {
 	if apiErr.ResponseID != "resp-validation" {
 		t.Fatalf("response id = %q", apiErr.ResponseID)
 	}
-	for _, want := range []string{"error envelope", "invalid backend name", "response_id: resp-validation"} {
+	for _, want := range []string{"422 Unprocessable Entity", "error envelope", "invalid backend name", "response_id: resp-validation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err.Error(), want)
 		}
+	}
+	if strings.Contains(err.Error(), `"field": "name"`) || strings.Contains(err.Error(), `"data"`) {
+		t.Fatalf("error leaks full structured body: %q", err.Error())
 	}
 }
 
