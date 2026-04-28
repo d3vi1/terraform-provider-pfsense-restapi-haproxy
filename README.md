@@ -254,11 +254,13 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
     }))
     backend_servers = sha1(jsonencode({
       app01 = {
-        name    = pfsense_haproxy_backend_server.addressvalidator_01.name
-        address = pfsense_haproxy_backend_server.addressvalidator_01.address
-        port    = pfsense_haproxy_backend_server.addressvalidator_01.port
-        status  = pfsense_haproxy_backend_server.addressvalidator_01.status
-        weight  = pfsense_haproxy_backend_server.addressvalidator_01.weight
+        name            = pfsense_haproxy_backend_server.addressvalidator_01.name
+        address         = pfsense_haproxy_backend_server.addressvalidator_01.address
+        port            = pfsense_haproxy_backend_server.addressvalidator_01.port
+        status          = pfsense_haproxy_backend_server.addressvalidator_01.status
+        weight          = pfsense_haproxy_backend_server.addressvalidator_01.weight
+        ssl             = pfsense_haproxy_backend_server.addressvalidator_01.ssl
+        sslserververify = pfsense_haproxy_backend_server.addressvalidator_01.sslserververify
       }
     }))
   }

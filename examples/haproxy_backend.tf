@@ -49,11 +49,13 @@ resource "pfsense_haproxy_apply" "app_backend" {
     }))
     backend_servers = sha1(jsonencode({
       app01 = {
-        name    = pfsense_haproxy_backend_server.app01.name
-        address = pfsense_haproxy_backend_server.app01.address
-        port    = pfsense_haproxy_backend_server.app01.port
-        status  = pfsense_haproxy_backend_server.app01.status
-        weight  = pfsense_haproxy_backend_server.app01.weight
+        name            = pfsense_haproxy_backend_server.app01.name
+        address         = pfsense_haproxy_backend_server.app01.address
+        port            = pfsense_haproxy_backend_server.app01.port
+        status          = pfsense_haproxy_backend_server.app01.status
+        weight          = pfsense_haproxy_backend_server.app01.weight
+        ssl             = pfsense_haproxy_backend_server.app01.ssl
+        sslserververify = pfsense_haproxy_backend_server.app01.sslserververify
       }
     }))
   }
