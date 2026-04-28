@@ -9,7 +9,9 @@ an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
 apply/reload lifecycle, `pfsense_haproxy_backend` manages top-level HAProxy
 backends by natural name, and `pfsense_haproxy_backend_server` manages backend
 server children by parent/backend name and server name.
-`pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name.
+`pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name,
+and `pfsense_haproxy_frontend_address` manages frontend bind/listen address
+children by parent/frontend name, listen address, custom address, and port.
 Backend and backend server lookup data sources are available for read-only
 references to existing HAProxy objects. Additional HAProxy resources are tracked
 through GitHub issues and milestones.
@@ -233,6 +235,41 @@ UAT validation is still pending. The implementation assumes
 frontend writes only mark HAProxy configuration pending until a separate
 `pfsense_haproxy_apply` resource is used.
 
+## HAProxy frontend addresses
+
+`resource "pfsense_haproxy_frontend_address"` manages frontend bind/listen
+address children:
+
+- Create re-queries the parent frontend by name, checks for an existing address
+  with `GET /services/haproxy/frontend/addresses?parent_id=...&extaddr=...&extaddr_custom=...&extaddr_port=...`,
+  then sends `POST /services/haproxy/frontend/address`.
+- Read re-queries the parent frontend by name and removes Terraform state if
+  the parent frontend or child address no longer exists.
+- Update re-queries the parent frontend and child address before sending
+  `PATCH /services/haproxy/frontend/address` with the current `parent_id`,
+  child `id`, and changed scalar fields.
+- Delete re-queries the parent frontend and child address before sending
+  `DELETE /services/haproxy/frontend/address?parent_id=...&id=...`; if either
+  is already gone, Terraform state is removed.
+- Import uses `frontend_name/extaddr/extaddr_custom_or_-/extaddr_port`, for
+  example `terraform import pfsense_haproxy_frontend_address.app app_frontend/any_ipv4/-/443`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses the frontend name, external address selector, optional
+custom IP address, and port as the stable ID because pfSense object IDs are
+implementation details and may change across config rewrites. The resource
+schema is intentionally conservative: it exposes `frontend_name`, `extaddr`,
+`extaddr_custom`, `extaddr_port`, and `extaddr_ssl` only. `exaddr_advanced`,
+placement, nested arrays, and transient REST IDs remain out of scope pending
+UAT confirmation.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/frontend/addresses?parent_id=...&extaddr=...&extaddr_custom=...&extaddr_port=...`
+returns frontend address objects with `id`, `extaddr`, `extaddr_custom`, and
+`extaddr_port`; create/update/delete use the documented child `parent_id`
+contract; and frontend address writes only mark HAProxy configuration pending
+until a separate `pfsense_haproxy_apply` resource is used.
+
 ## Development
 
 ```bash
@@ -249,6 +286,7 @@ make testacc
 - `pfsense_haproxy_backend`
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
+- `pfsense_haproxy_frontend_address`
 - `pfsense_haproxy_settings`
 
 ## Data Sources
@@ -260,7 +298,6 @@ make testacc
 
 ## Planned resources
 
-- `pfsense_haproxy_frontend_address`
 - `pfsense_haproxy_frontend_acl`
 - `pfsense_haproxy_frontend_action`
 - `pfsense_haproxy_frontend_certificate`
@@ -302,11 +339,19 @@ resource "pfsense_haproxy_frontend" "addressvalidator" {
   httpclose          = "http-server-close"
 }
 
+resource "pfsense_haproxy_frontend_address" "addressvalidator_https" {
+  frontend_name  = pfsense_haproxy_frontend.addressvalidator.name
+  extaddr        = "any_ipv4"
+  extaddr_port   = 443
+  extaddr_ssl    = true
+}
+
 resource "pfsense_haproxy_apply" "addressvalidator" {
   depends_on = [
     pfsense_haproxy_backend.addressvalidator,
     pfsense_haproxy_backend_server.addressvalidator_01,
     pfsense_haproxy_frontend.addressvalidator,
+    pfsense_haproxy_frontend_address.addressvalidator_https,
   ]
 
   triggers = {
@@ -336,6 +381,14 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
       client_timeout     = pfsense_haproxy_frontend.addressvalidator.client_timeout
       forwardfor         = pfsense_haproxy_frontend.addressvalidator.forwardfor
       httpclose          = pfsense_haproxy_frontend.addressvalidator.httpclose
+    }))
+    frontend_addresses = sha1(jsonencode({
+      https = {
+        extaddr        = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr
+        extaddr_custom = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_custom
+        extaddr_port   = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_port
+        extaddr_ssl    = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_ssl
+      }
     }))
   }
 }

@@ -122,6 +122,7 @@ func (p *haproxyProvider) Resources(_ context.Context) []func() resource.Resourc
 		newHaproxyBackendResource,
 		newHaproxyBackendServerResource,
 		newHaproxyFrontendResource,
+		newHaproxyFrontendAddressResource,
 		newHaproxySettingsResource,
 	}
 }

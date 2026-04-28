@@ -45,7 +45,7 @@ Primary references:
 | `pfsense_haproxy_backend_action` | HAProxyBackendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under backend. Conditional fields need UAT examples before strict Terraform validation. |
 | `pfsense_haproxy_backend_error_file` | HAProxyBackendErrorFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/error_file` | Create requires `parent_id`, `errorcode`, `errorfile`. | Child resource under backend. Consider later if required for managed routes. |
 | `pfsense_haproxy_frontend` | HAProxyFrontend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend`; `GET /frontends` | Create requires `name` and `type`. Patch requires `id`. | Implemented in M4-01 as a durable top-level resource using frontend `name` as Terraform's stable natural key. Before update/delete, resolve pfSense's current object ID from `GET /frontends?name=...`. Manage only `name`, `type`, and selected scalar fields: `descr`, `status`, `max_connections`, `backend_serverpool`, `socket_stats`, `dontlognull`, `dontlog_normal`, `log_separate_errors`, `log_detailed`, `client_timeout`, `forwardfor`, and `httpclose`. Support `http` and `tcp` only; defer `https` until certificate ownership is modeled. Keep addresses, ACLs, actions, certificates, error files, `advanced`, `advanced_bind`, and default certificate ownership out of scope pending UAT ownership confirmation. |
-| `pfsense_haproxy_frontend_address` | HAProxyFrontendAddress | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/address` | Create requires `parent_id`, `extaddr`, `extaddr_custom`. Patch requires `parent_id`, `id`. | Child resource under frontend. |
+| `pfsense_haproxy_frontend_address` | HAProxyFrontendAddress | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/address`; `GET /frontend/addresses` | Create requires `parent_id`, `extaddr`, `extaddr_custom`. Patch requires `parent_id`, `id`. | Implemented in M4-02 as a frontend child resource using `frontend_name/extaddr/extaddr_custom_or_-/extaddr_port` as Terraform's stable natural key. Before create/update/delete, resolve the current parent frontend ID by frontend name; before update/delete, resolve the current child ID by exact address fields under that parent. Manage only `extaddr`, `extaddr_custom`, `extaddr_port`, and `extaddr_ssl`; defer `exaddr_advanced` and placement until UAT validates sensitivity and ordering semantics. |
 | `pfsense_haproxy_frontend_acl` | HAProxyFrontendACL | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/acl` | Create requires `parent_id`, `name`, `expression`, `value`. Patch requires `parent_id`, `id`. | Child resource under frontend. |
 | `pfsense_haproxy_frontend_action` | HAProxyFrontendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under frontend. Conditional fields need UAT examples before strict Terraform validation. |
 | `pfsense_haproxy_frontend_certificate` | HAProxyFrontendCertificate | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/certificate` | Create requires `parent_id`; schema exposes `ssl_certificate`. | Child resource under frontend. Treat certificate identifiers as sensitive-adjacent and never capture certificate bodies. |
@@ -81,9 +81,15 @@ Primary references:
 - Confirm `GET /api/v2/services/haproxy/frontends?name=...` returns exact-name
   matches or, at minimum, a list containing `id`, `name`, and `type` fields
   that can be filtered client-side.
+- Confirm `GET /api/v2/services/haproxy/frontend/addresses?parent_id=...&extaddr=...&extaddr_custom=...&extaddr_port=...`
+  returns exact frontend address matches or, at minimum, a list containing
+  `id`, `extaddr`, `extaddr_custom`, and `extaddr_port` fields that can be
+  filtered client-side.
 - Confirm the implemented frontend scalar field response names and primitive
   types on the approved UAT firewall, including `httpclose` enum values and
   whether `forwardfor` is rejected for TCP frontends server-side.
+- Confirm frontend address `placement` behavior before exposing any ordering
+  control. The first implementation intentionally does not set placement.
 - Whether published conditional fields such as `agent_port` and
   `persist_cookie_name` are required only when their enabling booleans are true
   on UAT.
