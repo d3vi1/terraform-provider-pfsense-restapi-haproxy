@@ -309,18 +309,14 @@ func parseEnvelope(body []byte) (responseEnvelope, bool) {
 		return responseEnvelope{}, false
 	}
 
-	envelopeMarkers := []string{"code", "status", "response_id"}
-	hasEnvelopeMarker := false
-	for _, key := range envelopeMarkers {
-		if _, ok := raw[key]; ok {
-			hasEnvelopeMarker = true
-			break
-		}
-	}
-	if !hasEnvelopeMarker {
+	if _, ok := raw["code"]; !ok {
 		return responseEnvelope{}, false
 	}
-
+	if _, ok := raw["data"]; !ok {
+		if _, ok := raw["message"]; !ok {
+			return responseEnvelope{}, false
+		}
+	}
 	var envelope responseEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return responseEnvelope{}, false

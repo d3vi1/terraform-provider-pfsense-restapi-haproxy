@@ -283,6 +283,28 @@ func TestEnvelopeResponseDecodesData(t *testing.T) {
 	}
 }
 
+func TestNonEnvelopeResponseWithStatusFieldDecodesNormally(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"enabled","name":"haproxy"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	var response struct {
+		Status string `json:"status"`
+		Name   string `json:"name"`
+	}
+	if err := client.Get(context.Background(), "/services/haproxy/status", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if response.Status != "enabled" || response.Name != "haproxy" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
 func TestEnvelopeErrorWithHTTPSuccessIsActionable(t *testing.T) {
 	t.Parallel()
 
