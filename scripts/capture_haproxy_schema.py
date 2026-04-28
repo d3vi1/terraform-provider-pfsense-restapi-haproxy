@@ -248,25 +248,45 @@ def capture_metadata(captured_at: str, source_path: str) -> dict[str, str]:
     }
 
 
-def redact(value: Any, key: str = "") -> Any:
+SAFE_SCHEMA_METADATA_KEYS = {
+    "$ref",
+    "description",
+    "format",
+    "items",
+    "nullable",
+    "readOnly",
+    "required",
+    "title",
+    "type",
+    "writeOnly",
+}
+
+
+def redact(value: Any, key: str = "", sensitive_context: bool = False) -> Any:
+    current_sensitive = sensitive_context or bool(key and SENSITIVE_KEY_RE.search(key))
     if isinstance(value, dict):
-        return {item_key: redact(item_value, item_key) for item_key, item_value in value.items()}
+        return {
+            item_key: redact(item_value, item_key, current_sensitive)
+            for item_key, item_value in value.items()
+        }
     if isinstance(value, list):
-        return [redact(item, key) for item in value]
+        return [redact(item, key, current_sensitive) for item in value]
     if isinstance(value, str):
-        if should_redact_string(key, value):
+        if should_redact_string(key, value, current_sensitive):
             return REDACTION_TEXT
         return value
-    if key and SENSITIVE_KEY_RE.search(key) and value is not None:
+    if value is not None and current_sensitive and key not in SAFE_SCHEMA_METADATA_KEYS:
         return REDACTION_TEXT
     return value
 
 
-def should_redact_string(key: str, value: str) -> bool:
+def should_redact_string(key: str, value: str, sensitive_context: bool = False) -> bool:
     stripped = value.strip()
     if not stripped:
         return False
-    if key and SENSITIVE_KEY_RE.search(key) and not looks_like_schema_description(stripped):
+    if key and SENSITIVE_KEY_RE.search(key):
+        return True
+    if sensitive_context and key not in SAFE_SCHEMA_METADATA_KEYS:
         return True
     if PEM_RE.search(stripped):
         return True
@@ -276,11 +296,7 @@ def should_redact_string(key: str, value: str) -> bool:
         return True
     if JWT_RE.match(stripped):
         return True
-    return bool(LONG_TOKEN_RE.match(stripped) and not looks_like_schema_description(stripped))
-
-
-def looks_like_schema_description(value: str) -> bool:
-    return "<br>" in value or " " in value or value.startswith("#/")
+    return bool(LONG_TOKEN_RE.match(stripped))
 
 
 def write_json(path: Path, payload: Any) -> None:

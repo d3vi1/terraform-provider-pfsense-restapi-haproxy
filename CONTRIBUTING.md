@@ -7,6 +7,7 @@ Changes should be delivered through focused issues and pull requests.
 ```bash
 make lint
 make test
+python3 -m unittest scripts/capture_haproxy_schema_test.py
 ```
 
 Acceptance tests require a real pfSense instance with pfSense-pkg-RESTAPI and the HAProxy package installed:
