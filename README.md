@@ -6,9 +6,10 @@ Terraform provider for managing the pfSense HAProxy package through `pfSense-pkg
 
 Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
 an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
-apply/reload lifecycle, and `pfsense_haproxy_backend` manages top-level HAProxy
-backends by natural name. Additional HAProxy resources are tracked through
-GitHub issues and milestones.
+apply/reload lifecycle, `pfsense_haproxy_backend` manages top-level HAProxy
+backends by natural name, and `pfsense_haproxy_backend_server` manages backend
+server children by parent/backend name and server name. Additional HAProxy
+resources are tracked through GitHub issues and milestones.
 
 ## Requirements
 
@@ -154,6 +155,39 @@ UAT validation is still pending. The implementation assumes
 `HAProxyBackend` scalar field names, and backend writes do not apply pending
 HAProxy changes unless a separate `pfsense_haproxy_apply` resource is used.
 
+## HAProxy backend servers
+
+`resource "pfsense_haproxy_backend_server"` manages backend server children:
+
+- Create re-queries the parent backend by name, checks for an existing server
+  with `GET /services/haproxy/backend/servers?parent_id=...&name=...`, then
+  sends `POST /services/haproxy/backend/server`.
+- Read re-queries the parent backend by name and removes Terraform state if the
+  parent backend or child server no longer exists.
+- Update re-queries the parent backend and child server before sending
+  `PATCH /services/haproxy/backend/server` with the current `parent_id`, child
+  `id`, and changed scalar fields.
+- Delete re-queries the parent backend and child server before sending
+  `DELETE /services/haproxy/backend/server?parent_id=...&id=...`; if either is
+  already gone, Terraform state is removed.
+- Import uses `backend_name/server_name`, for example
+  `terraform import pfsense_haproxy_backend_server.app app_backend/app01`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses `backend_name/server_name` as the stable ID because pfSense
+object IDs are implementation details and may change across config rewrites. The
+resource schema is intentionally conservative: it exposes `backend_name`,
+`name`, `address`, `port`, `status`, `weight`, `ssl`, `sslserververify`, and the
+read-only `serverid`. The `advanced` server field is deferred until the
+sensitivity and ownership model is validated on UAT.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/backend/servers?parent_id=...&name=...` returns backend
+server objects with `id`, `name`, `address`, and `port`; create/update/delete
+use the documented child `parent_id` contract; and backend server writes only
+mark HAProxy configuration pending until a separate `pfsense_haproxy_apply`
+resource is used.
+
 ## Development
 
 ```bash
@@ -168,11 +202,11 @@ make testacc
 
 - `pfsense_haproxy_apply`
 - `pfsense_haproxy_backend`
+- `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_settings`
 
 ## Planned resources
 
-- `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
 - `pfsense_haproxy_frontend_address`
 - `pfsense_haproxy_frontend_acl`
@@ -195,8 +229,20 @@ resource "pfsense_haproxy_backend" "addressvalidator" {
   monitor_httpversion = "HTTP/1.1"
 }
 
+resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
+  backend_name = pfsense_haproxy_backend.addressvalidator.name
+  name         = "addressvalidator_01"
+  address      = "10.30.10.21"
+  port         = 8080
+  status       = "active"
+  weight       = 10
+}
+
 resource "pfsense_haproxy_apply" "addressvalidator" {
-  depends_on = [pfsense_haproxy_backend.addressvalidator]
+  depends_on = [
+    pfsense_haproxy_backend.addressvalidator,
+    pfsense_haproxy_backend_server.addressvalidator_01,
+  ]
 
   triggers = {
     backend = sha1(jsonencode({
@@ -206,12 +252,23 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
       monitor_uri    = pfsense_haproxy_backend.addressvalidator.monitor_uri
       server_timeout = pfsense_haproxy_backend.addressvalidator.server_timeout
     }))
+    backend_servers = sha1(jsonencode({
+      app01 = {
+        name            = pfsense_haproxy_backend_server.addressvalidator_01.name
+        address         = pfsense_haproxy_backend_server.addressvalidator_01.address
+        port            = pfsense_haproxy_backend_server.addressvalidator_01.port
+        status          = pfsense_haproxy_backend_server.addressvalidator_01.status
+        weight          = pfsense_haproxy_backend_server.addressvalidator_01.weight
+        ssl             = pfsense_haproxy_backend_server.addressvalidator_01.ssl
+        sslserververify = pfsense_haproxy_backend_server.addressvalidator_01.sslserververify
+      }
+    }))
   }
 }
 ```
 
-Backend server resources and remaining schemas will be finalized from approved
-UAT pfSense REST API endpoint responses before production use.
+Remaining schemas will be finalized from approved UAT pfSense REST API endpoint
+responses before production use.
 
 ## Schema inventory
 
