@@ -106,7 +106,7 @@ func TestHaproxyApplyResourceCreatePostsAndPollsUntilDone(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode POST payload: %v", err)
 			}
-			if len(payload) != 0 {
+			if payload["async"] != true || len(payload) != 1 {
 				t.Fatalf("POST payload = %#v", payload)
 			}
 			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":{"applied":false}}`))

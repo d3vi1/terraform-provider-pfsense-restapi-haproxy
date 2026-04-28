@@ -342,7 +342,7 @@ func readHaproxyApplyStatus(ctx context.Context, client *pfsense.Client) (haprox
 }
 
 func applyAndWaitForHaproxy(ctx context.Context, client *pfsense.Client, timeout time.Duration, pollInterval time.Duration) (haproxyApplyStatus, error) {
-	if err := client.Post(ctx, haproxyApplyPath, map[string]any{}, nil); err != nil {
+	if err := client.Post(ctx, haproxyApplyPath, map[string]any{"async": true}, nil); err != nil {
 		return haproxyApplyStatus{}, fmt.Errorf("start HAProxy apply with POST %s: %w", haproxyApplyPath, err)
 	}
 
