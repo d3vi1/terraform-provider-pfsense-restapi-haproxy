@@ -14,9 +14,3 @@ linters:
 formatters:
   enable:
     - gofmt
-
-issues:
-  exclude-rules:
-    - linters:
-        - gosec
-      text: "G402"
