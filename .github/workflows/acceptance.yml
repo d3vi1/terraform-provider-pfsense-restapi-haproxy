@@ -7,24 +7,75 @@ jobs:
   acceptance:
     if: ${{ github.repository_owner == 'd3vi1' }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     env:
       PFSENSE_ENDPOINT: ${{ secrets.PFSENSE_ENDPOINT }}
       PFSENSE_API_KEY: ${{ secrets.PFSENSE_API_KEY }}
       PFSENSE_USERNAME: ${{ secrets.PFSENSE_USERNAME }}
       PFSENSE_PASSWORD: ${{ secrets.PFSENSE_PASSWORD }}
       PFSENSE_INSECURE_TLS: ${{ secrets.PFSENSE_INSECURE_TLS }}
+      PFSENSE_TIMEOUT: ${{ secrets.PFSENSE_TIMEOUT }}
       PFSENSE_TEST_PREFIX: ${{ secrets.PFSENSE_TEST_PREFIX }}
       PFSENSE_TEST_ENVIRONMENT: ${{ secrets.PFSENSE_TEST_ENVIRONMENT }}
+      PFSENSE_TEST_CERTIFICATE_REF: ${{ secrets.PFSENSE_TEST_CERTIFICATE_REF }}
+      PFSENSE_TEST_CUSTOM_IPV4: ${{ secrets.PFSENSE_TEST_CUSTOM_IPV4 }}
+      PFSENSE_TEST_CUSTOM_IPV6: ${{ secrets.PFSENSE_TEST_CUSTOM_IPV6 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      - uses: hashicorp/setup-terraform@v3
+      - name: wait for older acceptance runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 7200))
+          while true; do
+            older_run="$(
+              gh api --paginate -X GET "repos/${REPOSITORY}/actions/workflows/acceptance.yml/runs" \
+                -f per_page=100 \
+                --jq "[.workflow_runs[] | select(.id < (${RUN_ID} | tonumber) and .status != \"completed\") | .id][0] // \"\""
+            )"
+            if [ -z "${older_run}" ]; then
+              break
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::Timed out waiting for older acceptance run ${older_run}"
+              exit 1
+            fi
+            echo "Waiting for older acceptance run ${older_run} to finish"
+            sleep 30
+          done
+      - name: acceptance safety precheck
+        run: |
+          set -euo pipefail
+          if [ -z "${PFSENSE_ENDPOINT}" ]; then
+            echo "::notice::PFSENSE_ENDPOINT is not configured; skipping acceptance tests"
+            exit 0
+          fi
+          if [ "${PFSENSE_TEST_ENVIRONMENT}" != "uat" ]; then
+            echo "::error::PFSENSE_TEST_ENVIRONMENT must be uat for acceptance tests"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_TEST_PREFIX}" ]; then
+            echo "::error::PFSENSE_TEST_PREFIX is required for acceptance tests"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_API_KEY}" ] && { [ -z "${PFSENSE_USERNAME}" ] || [ -z "${PFSENSE_PASSWORD}" ]; }; then
+            echo "::error::PFSENSE_API_KEY or PFSENSE_USERNAME/PFSENSE_PASSWORD is required for acceptance tests"
+            exit 1
+          fi
       - name: acceptance tests
-        if: ${{ env.PFSENSE_ENDPOINT != '' && (env.PFSENSE_API_KEY != '' || env.PFSENSE_USERNAME != '') }}
+        if: ${{ env.PFSENSE_ENDPOINT != '' }}
         env:
           TF_ACC: "1"
         run: |
           set -euo pipefail
-          go test -tags=acc ./... -count=1
+          go test -tags=acc ./... -count=1 -p=1
