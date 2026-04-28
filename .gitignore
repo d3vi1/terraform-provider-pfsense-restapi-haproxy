@@ -1,0 +1,29 @@
+# Go
+bin/
+dist/
+coverage.out
+*.test
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.rc
+terraformrc
+
+# Local secrets and pfSense material
+.env
+.local-secrets/
+pfsense-test-config.yaml
+*.ovpn
+*.key
+*.crt
+*.p12
+config.xml
+config-*.xml
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/

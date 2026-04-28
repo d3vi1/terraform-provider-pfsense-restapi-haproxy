@@ -1,0 +1,30 @@
+name: acceptance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    if: ${{ github.repository_owner == 'd3vi1' }}
+    runs-on: ubuntu-latest
+    env:
+      PFSENSE_ENDPOINT: ${{ secrets.PFSENSE_ENDPOINT }}
+      PFSENSE_API_KEY: ${{ secrets.PFSENSE_API_KEY }}
+      PFSENSE_USERNAME: ${{ secrets.PFSENSE_USERNAME }}
+      PFSENSE_PASSWORD: ${{ secrets.PFSENSE_PASSWORD }}
+      PFSENSE_INSECURE_TLS: ${{ secrets.PFSENSE_INSECURE_TLS }}
+      PFSENSE_TEST_PREFIX: ${{ secrets.PFSENSE_TEST_PREFIX }}
+      PFSENSE_TEST_ENVIRONMENT: ${{ secrets.PFSENSE_TEST_ENVIRONMENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: acceptance tests
+        if: ${{ env.PFSENSE_ENDPOINT != '' && (env.PFSENSE_API_KEY != '' || env.PFSENSE_USERNAME != '') }}
+        env:
+          TF_ACC: "1"
+        run: |
+          set -euo pipefail
+          go test -tags=acc ./... -count=1

@@ -1,0 +1,22 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gosec
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  exclude-rules:
+    - linters:
+        - gosec
+      text: "G402"
