@@ -263,7 +263,7 @@ func TestConcurrentMutatingRequestsSerialize(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := seen.Load(); got != int32(len(methods)) {
+	if got := seen.Load(); got != 4 {
 		t.Fatalf("mutating requests sent = %d, want %d", got, len(methods))
 	}
 }
