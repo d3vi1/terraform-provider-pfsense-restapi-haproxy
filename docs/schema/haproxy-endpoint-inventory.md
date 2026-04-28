@@ -30,8 +30,8 @@ published documentation.
 | `/api/v2/services/haproxy/backend/server` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendServer | pfSense-pkg-haproxy | Implemented in M3-02; UAT pending |
 | `/api/v2/services/haproxy/backend/servers` | GET, DELETE | Plural | HAProxyBackendServer | pfSense-pkg-haproxy | Implemented in M3-02; UAT pending |
 | `/api/v2/services/haproxy/backends` | GET, PUT, DELETE | Plural | HAProxyBackend | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/file` | GET, POST, PATCH, DELETE | Singular | HAProxyFile | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/files` | GET, PUT, DELETE | Plural | HAProxyFile | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/file` | GET, POST, PATCH, DELETE | Singular | HAProxyFile | pfSense-pkg-haproxy | Deferred pending UAT; not implemented |
+| `/api/v2/services/haproxy/files` | GET, PUT, DELETE | Plural | HAProxyFile | pfSense-pkg-haproxy | Deferred pending UAT; not implemented |
 | `/api/v2/services/haproxy/frontend/acl` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendACL | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/acls` | GET, DELETE | Plural | HAProxyFrontendACL | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/action` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendAction | pfSense-pkg-haproxy | Pending |
@@ -56,5 +56,9 @@ published documentation.
 - Confirm package name and version metadata from `/api/v2/schema/native`.
 - Confirm singular object ID behavior and child `parent_id` behavior from live
   schema metadata before implementing import or drift detection.
+- HAProxy file endpoints are deferred until UAT confirms
+  `/api/v2/services/haproxy/file` and `/api/v2/services/haproxy/files`
+  response/import semantics and a security model is selected for
+  `HAProxyFile.content`.
 - Do not use plural `PUT` replacement or plural `DELETE` endpoints from
   Terraform resources until an import/migration plan exists.

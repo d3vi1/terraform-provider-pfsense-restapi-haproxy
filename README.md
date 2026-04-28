@@ -16,7 +16,9 @@ children by parent/frontend name, listen address, custom address, and port.
 references to frontends without managing certificate or private key material.
 Backend and backend server lookup data sources are available for read-only
 references to existing HAProxy objects. Additional HAProxy resources are tracked
-through GitHub issues and milestones.
+through GitHub issues and milestones. `pfsense_haproxy_file` is intentionally
+deferred until UAT confirms the HAProxy file endpoint semantics and a security
+model is selected for secret-bearing file content.
 
 ## Requirements
 
@@ -306,6 +308,24 @@ create/delete use the documented child `parent_id` contract; and certificate
 attachment writes only mark HAProxy configuration pending until a separate
 `pfsense_haproxy_apply` resource is used.
 
+## Deferred HAProxy files
+
+`pfsense_haproxy_file` is intentionally deferred out of M4. The current M4
+resources for frontends, frontend addresses, and frontend certificate
+attachments do not require `HAProxyFile.content` for their lifecycle.
+
+The REST API's `HAProxyFile.content` field can carry custom error pages,
+snippets, or other HAProxy text that may contain private material. Before this
+provider manages it, a later issue must pass these gates:
+
+- A managed error-file or snippet use case requires first-class HAProxy file
+  ownership.
+- UAT confirms `/services/haproxy/file` and `/services/haproxy/files` response
+  shape, import identity, read-after-write behavior, and whether reads return
+  file content.
+- A security model is selected for either sensitive Terraform state content or
+  write-only content with a caller-supplied content hash for drift detection.
+
 ## Development
 
 ```bash
@@ -333,10 +353,13 @@ make testacc
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_settings`
 
-## Planned resources
+## Planned and deferred resources
 
 - `pfsense_haproxy_frontend_acl`
 - `pfsense_haproxy_frontend_action`
+
+Deferred pending UAT and security-model gates:
+
 - `pfsense_haproxy_file`
 
 ## Example ingress contract
