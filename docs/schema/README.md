@@ -88,6 +88,15 @@ For M3-01, `pfsense_haproxy_backend` uses the upstream `HAProxyBackend.inc`
 model as a conservative implementation reference. Terraform stores backend
 names as stable natural keys, resolves the current pfSense object ID from
 `GET /services/haproxy/backends?name=...` before update/delete, and manages only
-selected scalar fields. Nested backend servers, ACLs, actions, error files,
-stats, and advanced pass-through fields remain pending UAT confirmation and
-separate ownership decisions.
+selected scalar fields. Nested ACLs, actions, error files, stats, and advanced
+pass-through fields remain pending UAT confirmation and separate ownership
+decisions.
+
+For M3-02, `pfsense_haproxy_backend_server` uses the upstream
+`HAProxyBackendServer.inc` model as a conservative implementation reference.
+Terraform stores `backend_name/server_name` as a stable natural key, resolves the
+current parent backend ID before every child write, resolves the current child
+ID before update/delete, and manages only `address`, `port`, `status`, `weight`,
+`ssl`, and `sslserververify`. The read-only `serverid` field is exposed for
+drift visibility. The `advanced` server field remains pending UAT confirmation
+because it can contain arbitrary HAProxy server configuration.

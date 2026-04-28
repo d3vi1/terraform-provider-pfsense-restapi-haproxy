@@ -27,8 +27,8 @@ published documentation.
 | `/api/v2/services/haproxy/backend` | GET, POST, PATCH, DELETE | Singular | HAProxyBackend | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/backend/error_file` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendErrorFile | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/backend/errorfiles` | GET, DELETE | Plural | HAProxyBackendErrorFile | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/server` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendServer | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/servers` | GET, DELETE | Plural | HAProxyBackendServer | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/backend/server` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendServer | pfSense-pkg-haproxy | Implemented in M3-02; UAT pending |
+| `/api/v2/services/haproxy/backend/servers` | GET, DELETE | Plural | HAProxyBackendServer | pfSense-pkg-haproxy | Implemented in M3-02; UAT pending |
 | `/api/v2/services/haproxy/backends` | GET, PUT, DELETE | Plural | HAProxyBackend | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/file` | GET, POST, PATCH, DELETE | Singular | HAProxyFile | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/files` | GET, PUT, DELETE | Plural | HAProxyFile | pfSense-pkg-haproxy | Pending |

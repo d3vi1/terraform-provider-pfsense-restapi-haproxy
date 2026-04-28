@@ -11,14 +11,28 @@ resource "pfsense_haproxy_backend" "app" {
   monitor_httpversion = "HTTP/1.1"
 }
 
+resource "pfsense_haproxy_backend_server" "app01" {
+  backend_name = pfsense_haproxy_backend.app.name
+  name         = "app01"
+  address      = "10.30.10.21"
+  port         = 8080
+  status       = "active"
+  weight       = 10
+}
+
 # Explicit apply after backend changes. There is intentionally no hidden
-# auto-apply in pfsense_haproxy_backend or other durable HAProxy resources.
+# auto-apply in pfsense_haproxy_backend, pfsense_haproxy_backend_server, or
+# other durable HAProxy resources.
 #
 # UAT note: this assumes GET /services/haproxy/backends returns objects with
 # stable names and transient pfSense IDs, and that POST/PATCH/DELETE backend
 # writes only mark HAProxy configuration pending until pfsense_haproxy_apply runs.
+# Backend server writes additionally assume child lookups by parent_id and name.
 resource "pfsense_haproxy_apply" "app_backend" {
-  depends_on = [pfsense_haproxy_backend.app]
+  depends_on = [
+    pfsense_haproxy_backend.app,
+    pfsense_haproxy_backend_server.app01,
+  ]
 
   triggers = {
     backend = sha1(jsonencode({
@@ -32,6 +46,15 @@ resource "pfsense_haproxy_apply" "app_backend" {
       httpcheck_method    = pfsense_haproxy_backend.app.httpcheck_method
       monitor_uri         = pfsense_haproxy_backend.app.monitor_uri
       monitor_httpversion = pfsense_haproxy_backend.app.monitor_httpversion
+    }))
+    backend_servers = sha1(jsonencode({
+      app01 = {
+        name    = pfsense_haproxy_backend_server.app01.name
+        address = pfsense_haproxy_backend_server.app01.address
+        port    = pfsense_haproxy_backend_server.app01.port
+        status  = pfsense_haproxy_backend_server.app01.status
+        weight  = pfsense_haproxy_backend_server.app01.weight
+      }
     }))
   }
 
