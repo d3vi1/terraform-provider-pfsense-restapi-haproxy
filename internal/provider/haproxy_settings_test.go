@@ -121,7 +121,7 @@ func TestImplementedResourcesHaveImportCoverage(t *testing.T) {
 		if _, ok := res.(resource.ResourceWithImportState); !ok {
 			t.Fatalf("%s does not implement ResourceWithImportState", typeName)
 		}
-		if !strings.Contains(readmeText, "terraform import "+typeName) {
+		if !strings.Contains(readmeText, "terraform import "+typeName+".") {
 			t.Fatalf("README.md does not document terraform import syntax for %s", typeName)
 		}
 		delete(resourceByType, typeName)
