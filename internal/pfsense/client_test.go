@@ -211,8 +211,7 @@ func TestConcurrentMutatingRequestsSerialize(t *testing.T) {
 		if !isConfigMutationMethod(req.Method) {
 			return nil, fmt.Errorf("unexpected non-mutating method %s", req.Method)
 		}
-		if configWriteMu.TryLock() {
-			configWriteMu.Unlock()
+		if !configWriteGuardHeld() {
 			return nil, fmt.Errorf("%s reached transport without holding the shared write guard", req.Method)
 		}
 
@@ -288,8 +287,7 @@ func TestGetDoesNotWaitForActiveWrite(t *testing.T) {
 			close(writeEntered)
 			<-releaseWrite
 		case http.MethodGet:
-			if configWriteMu.TryLock() {
-				configWriteMu.Unlock()
+			if !configWriteGuardHeld() {
 				return nil, errors.New("GET reached transport after the active write guard was released")
 			}
 		default:
@@ -328,6 +326,73 @@ func TestGetDoesNotWaitForActiveWrite(t *testing.T) {
 	release()
 	if err := <-writeDone; err != nil {
 		t.Fatalf("Post returned error: %v", err)
+	}
+}
+
+func TestWaitingMutatingRequestHonorsContextCancellation(t *testing.T) {
+	writeEntered := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	secondWriteReachedTransport := make(chan struct{}, 1)
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseWrite)
+		})
+	}
+	defer release()
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost {
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+
+		select {
+		case writeEntered <- struct{}{}:
+			<-releaseWrite
+		default:
+			secondWriteReachedTransport <- struct{}{}
+			return testJSONResponse(req, `{"ok":true}`), nil
+		}
+
+		return testJSONResponse(req, `{"ok":true}`), nil
+	})
+
+	firstWriteDone := make(chan error, 1)
+	go func() {
+		firstWriteDone <- client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-a"}, nil)
+	}()
+	waitForSignal(t, writeEntered, "first write request to enter transport")
+
+	waitingCtx, cancel := context.WithCancel(context.Background())
+	secondWriteDone := make(chan error, 1)
+	go func() {
+		secondWriteDone <- client.Post(waitingCtx, "/haproxy/test", map[string]string{"name": "backend-b"}, nil)
+	}()
+	cancel()
+
+	select {
+	case err := <-secondWriteDone:
+		if err == nil {
+			t.Fatal("second write returned nil error after context cancellation")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("second write error = %v, want context.Canceled", err)
+		}
+	case <-secondWriteReachedTransport:
+		t.Fatal("canceled waiting write reached transport")
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled waiting write did not return promptly")
+	}
+
+	release()
+	if err := <-firstWriteDone; err != nil {
+		t.Fatalf("first Post returned error: %v", err)
+	}
+
+	if err := client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-c"}, nil); err != nil {
+		t.Fatalf("later Post returned error after cancellation: %v", err)
 	}
 }
 
@@ -616,6 +681,10 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func configWriteGuardHeld() bool {
+	return len(configWriteGuard) > 0
 }
 
 func testJSONResponse(req *http.Request, body string) *http.Response {

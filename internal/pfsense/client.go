@@ -12,14 +12,13 @@ import (
 	"net/url"
 	pathpkg "path"
 	"strings"
-	"sync"
 	"time"
 )
 
 const apiPathPrefix = "/api/v2"
 
-// configWriteMu serializes pfSense config mutations within one provider process.
-var configWriteMu sync.Mutex
+// configWriteGuard serializes pfSense config mutations within one provider process.
+var configWriteGuard = make(chan struct{}, 1)
 
 // Config contains connection settings for pfSense-pkg-RESTAPI.
 type Config struct {
@@ -153,7 +152,7 @@ func (c *Client) Do(ctx context.Context, method string, path string, in any, out
 	}
 	c.setAuth(req)
 
-	return withConfigWriteGuard(method, func() error {
+	return withConfigWriteGuard(ctx, method, func() error {
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return fmt.Errorf("%s %s request failed: %w", method, displayPath, err)
@@ -211,13 +210,19 @@ func (c *Client) setAuth(req *http.Request) {
 	}
 }
 
-func withConfigWriteGuard(method string, run func() error) error {
+func withConfigWriteGuard(ctx context.Context, method string, run func() error) error {
 	if !isConfigMutationMethod(method) {
 		return run()
 	}
 
-	configWriteMu.Lock()
-	defer configWriteMu.Unlock()
+	select {
+	case configWriteGuard <- struct{}{}:
+		defer func() {
+			<-configWriteGuard
+		}()
+	case <-ctx.Done():
+		return fmt.Errorf("%s request canceled while waiting for pfSense config write guard: %w", method, ctx.Err())
+	}
 
 	return run()
 }
