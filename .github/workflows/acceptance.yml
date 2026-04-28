@@ -40,8 +40,8 @@ jobs:
           while true; do
             older_run="$(
               gh api -X GET "repos/${REPOSITORY}/actions/workflows/acceptance.yml/runs" \
-                -f status=in_progress \
-                --jq ".workflow_runs[] | select(.id < (${RUN_ID} | tonumber)) | .id" \
+                -f per_page=100 \
+                --jq ".workflow_runs[] | select(.id < (${RUN_ID} | tonumber) and .status != \"completed\") | .id" \
                 | head -n 1
             )"
             if [ -z "${older_run}" ]; then
