@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,6 +73,62 @@ func TestProviderRegistersHaproxySettings(t *testing.T) {
 	}
 	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_settings") {
 		t.Fatalf("pfsense_haproxy_settings data source was not registered")
+	}
+}
+
+func TestImplementedResourcesHaveImportCoverage(t *testing.T) {
+	provider := &haproxyProvider{}
+	resourceByType := map[string]resource.Resource{}
+
+	for _, constructor := range provider.Resources(context.Background()) {
+		res := constructor()
+		var metadata resource.MetadataResponse
+		res.Metadata(context.Background(), resource.MetadataRequest{}, &metadata)
+		if metadata.TypeName == "" {
+			t.Fatalf("registered resource %T did not report a type name", res)
+		}
+		if _, exists := resourceByType[metadata.TypeName]; exists {
+			t.Fatalf("duplicate resource registration for %s", metadata.TypeName)
+		}
+		resourceByType[metadata.TypeName] = res
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readmeText := string(readme)
+
+	expectedImportExamples := map[string]string{
+		"pfsense_haproxy_apply":                "terraform import pfsense_haproxy_apply.global apply",
+		"pfsense_haproxy_backend":              "terraform import pfsense_haproxy_backend.app app_backend",
+		"pfsense_haproxy_backend_acl":          "terraform import pfsense_haproxy_backend_acl.host app_backend/host_acl",
+		"pfsense_haproxy_backend_action":       "terraform import pfsense_haproxy_backend_action.route app_backend/route_app01",
+		"pfsense_haproxy_backend_server":       "terraform import pfsense_haproxy_backend_server.app app_backend/app01",
+		"pfsense_haproxy_frontend":             "terraform import pfsense_haproxy_frontend.app app_frontend",
+		"pfsense_haproxy_frontend_acl":         "terraform import pfsense_haproxy_frontend_acl.host app_frontend/host_acl",
+		"pfsense_haproxy_frontend_action":      "terraform import pfsense_haproxy_frontend_action.route app_frontend/route_app",
+		"pfsense_haproxy_frontend_address":     "terraform import pfsense_haproxy_frontend_address.app app_frontend/any_ipv4/-/443",
+		"pfsense_haproxy_frontend_certificate": "terraform import pfsense_haproxy_frontend_certificate.app app_frontend/existing_cert_ref",
+		"pfsense_haproxy_settings":             "terraform import pfsense_haproxy_settings.global settings",
+	}
+
+	for typeName, importExample := range expectedImportExamples {
+		res, ok := resourceByType[typeName]
+		if !ok {
+			t.Fatalf("%s resource was not registered", typeName)
+		}
+		if _, ok := res.(resource.ResourceWithImportState); !ok {
+			t.Fatalf("%s does not implement ResourceWithImportState", typeName)
+		}
+		if !strings.Contains(readmeText, importExample) {
+			t.Fatalf("README.md does not document expected import example for %s: %s", typeName, importExample)
+		}
+		delete(resourceByType, typeName)
+	}
+
+	for typeName := range resourceByType {
+		t.Fatalf("%s is registered without import coverage expectations", typeName)
 	}
 }
 

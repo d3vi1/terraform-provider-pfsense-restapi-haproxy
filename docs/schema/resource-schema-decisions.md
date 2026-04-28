@@ -29,6 +29,10 @@ Primary references:
 - Model HAProxy apply as an explicit action resource and read-only status data
   source. Do not add auto-apply flags to settings or durable resources unless a
   later issue intentionally changes that contract.
+- Maintain import coverage for every implemented resource. M5-03 audited all
+  registered resources as implementing Terraform import state with documented
+  import syntax and unit coverage; no implemented resource is intentionally
+  missing import support. Data sources are lookup-only and are not importable.
 - Mark actual secret-bearing attributes as sensitive when implemented. Public
   schema names include `stats_password`, `HAProxyFile.content`, certificate or
   private-key bodies, and custom/advanced HAProxy text fields that may carry
