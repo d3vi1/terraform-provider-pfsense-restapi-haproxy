@@ -38,8 +38,8 @@ published documentation.
 | `/api/v2/services/haproxy/frontend/actions` | GET, DELETE | Plural | HAProxyFrontendAction | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/address` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendAddress | pfSense-pkg-haproxy | Implemented in M4-02 for POST/PATCH/DELETE; UAT pending |
 | `/api/v2/services/haproxy/frontend/addresses` | GET, DELETE | Plural | HAProxyFrontendAddress | pfSense-pkg-haproxy | Implemented in M4-02 for GET lookup only; plural DELETE intentionally unused; UAT pending |
-| `/api/v2/services/haproxy/frontend/certificate` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontend/certificates` | GET, DELETE | Plural | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/frontend/certificate` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Implemented in M4-03 for POST/DELETE; PATCH intentionally unused; UAT pending |
+| `/api/v2/services/haproxy/frontend/certificates` | GET, DELETE | Plural | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Implemented in M4-03 for GET lookup only; plural DELETE intentionally unused; UAT pending |
 | `/api/v2/services/haproxy/frontend` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontend | pfSense-pkg-haproxy | Implemented in M4-01; UAT pending |
 | `/api/v2/services/haproxy/frontend/error_file` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendErrorFile | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/error_files` | GET, DELETE | Plural | HAProxyFrontendErrorFile | pfSense-pkg-haproxy | Pending |
