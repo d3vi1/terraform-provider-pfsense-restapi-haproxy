@@ -4,7 +4,9 @@ Terraform provider for managing the pfSense HAProxy package through `pfSense-pkg
 
 ## Status
 
-Bootstrap scaffold is in place. Resource implementation is tracked through GitHub issues and milestones.
+Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
+an import-first ownership model. Additional HAProxy resources are tracked
+through GitHub issues and milestones.
 
 ## Requirements
 
@@ -19,14 +21,14 @@ Bootstrap scaffold is in place. Resource implementation is tracked through GitHu
 ```hcl
 terraform {
   required_providers {
-    pfsense-haproxy = {
+    pfsense = {
       source  = "d3vi1/pfsense-restapi-haproxy"
       version = ">= 0.1.0"
     }
   }
 }
 
-provider "pfsense-haproxy" {
+provider "pfsense" {
   endpoint     = "https://pfsense.example.com"
   api_key      = var.pfsense_api_key
   insecure_tls = true
@@ -49,6 +51,35 @@ Prefer API key authentication for automation.
 for the planned `pfsense_haproxy_apply` implementation once HAProxy resource
 semantics are in place.
 
+## HAProxy settings ownership
+
+`pfsense_haproxy_settings` is split into a data source and a singleton resource:
+
+- `data "pfsense_haproxy_settings"` reads `GET /services/haproxy/settings`.
+- `resource "pfsense_haproxy_settings"` must be imported with fixed ID
+  `settings` before it can manage fields.
+- Resource create intentionally returns a diagnostic and performs no REST API
+  write.
+- Resource update patches changed scalar fields with
+  `PATCH /services/haproxy/settings`.
+- Resource delete removes Terraform state only and performs no REST API call.
+- No HAProxy apply/reload is triggered by this resource.
+
+The current schema exposes documented scalar HAProxy settings only. Nested
+`dns_resolvers` and `email_mailers` are intentionally not managed by this
+resource until child-resource ownership is validated. The `advanced` field is
+marked sensitive because it can contain arbitrary HAProxy global configuration.
+
+Live UAT schema capture is still pending. The field list is based on the
+upstream pfSense-pkg-RESTAPI HAProxy settings model and must be verified against
+the approved UAT firewall before production use.
+
+Import example:
+
+```bash
+terraform import pfsense_haproxy_settings.global settings
+```
+
 ## Development
 
 ```bash
@@ -59,9 +90,12 @@ make testacc
 
 `make testacc` requires real pfSense credentials and must be run only against an approved test target unless the issue explicitly targets production.
 
-## Planned resources
+## Resources
 
 - `pfsense_haproxy_settings`
+
+## Planned resources
+
 - `pfsense_haproxy_backend`
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
@@ -89,7 +123,8 @@ resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
 }
 ```
 
-The exact schemas will be finalized from pfSense REST API endpoint responses during Milestone 1.
+Remaining resource schemas will be finalized from approved UAT pfSense REST API
+endpoint responses before production use.
 
 ## Schema inventory
 
