@@ -18,4 +18,4 @@ test:
 	$(GO) test ./...
 
 testacc:
-	TF_ACC=1 $(GO) test -tags=acc ./... -count=1
+	TF_ACC=1 $(GO) test -tags=acc ./... -count=1 -p=1

@@ -3,6 +3,10 @@ name: acceptance
 on:
   workflow_dispatch:
 
+concurrency:
+  group: acceptance-uat
+  cancel-in-progress: false
+
 jobs:
   acceptance:
     if: ${{ github.repository_owner == 'd3vi1' }}
@@ -13,18 +17,42 @@ jobs:
       PFSENSE_USERNAME: ${{ secrets.PFSENSE_USERNAME }}
       PFSENSE_PASSWORD: ${{ secrets.PFSENSE_PASSWORD }}
       PFSENSE_INSECURE_TLS: ${{ secrets.PFSENSE_INSECURE_TLS }}
+      PFSENSE_TIMEOUT: ${{ secrets.PFSENSE_TIMEOUT }}
       PFSENSE_TEST_PREFIX: ${{ secrets.PFSENSE_TEST_PREFIX }}
       PFSENSE_TEST_ENVIRONMENT: ${{ secrets.PFSENSE_TEST_ENVIRONMENT }}
+      PFSENSE_TEST_CERTIFICATE_REF: ${{ secrets.PFSENSE_TEST_CERTIFICATE_REF }}
+      PFSENSE_TEST_CUSTOM_IPV4: ${{ secrets.PFSENSE_TEST_CUSTOM_IPV4 }}
+      PFSENSE_TEST_CUSTOM_IPV6: ${{ secrets.PFSENSE_TEST_CUSTOM_IPV6 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      - uses: hashicorp/setup-terraform@v3
+      - name: acceptance safety precheck
+        run: |
+          set -euo pipefail
+          if [ -z "${PFSENSE_ENDPOINT}" ]; then
+            echo "::notice::PFSENSE_ENDPOINT is not configured; skipping acceptance tests"
+            exit 0
+          fi
+          if [ "${PFSENSE_TEST_ENVIRONMENT}" != "uat" ]; then
+            echo "::error::PFSENSE_TEST_ENVIRONMENT must be uat for acceptance tests"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_TEST_PREFIX}" ]; then
+            echo "::error::PFSENSE_TEST_PREFIX is required for acceptance tests"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_API_KEY}" ] && { [ -z "${PFSENSE_USERNAME}" ] || [ -z "${PFSENSE_PASSWORD}" ]; }; then
+            echo "::error::PFSENSE_API_KEY or PFSENSE_USERNAME/PFSENSE_PASSWORD is required for acceptance tests"
+            exit 1
+          fi
       - name: acceptance tests
-        if: ${{ env.PFSENSE_ENDPOINT != '' && (env.PFSENSE_API_KEY != '' || env.PFSENSE_USERNAME != '') }}
+        if: ${{ env.PFSENSE_ENDPOINT != '' }}
         env:
           TF_ACC: "1"
         run: |
           set -euo pipefail
-          go test -tags=acc ./... -count=1
+          go test -tags=acc ./... -count=1 -p=1

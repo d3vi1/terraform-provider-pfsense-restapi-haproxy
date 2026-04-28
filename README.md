@@ -482,7 +482,11 @@ make test
 make testacc
 ```
 
-`make testacc` requires real pfSense credentials and must be run only against an approved test target unless the issue explicitly targets production.
+`make testacc` requires real pfSense credentials and must be run only against an
+approved UAT target unless the issue explicitly targets production. Set
+`PFSENSE_TEST_ENVIRONMENT=uat` and `PFSENSE_TEST_PREFIX` before running it. The
+acceptance runner is serialized because HAProxy package writes mutate shared
+pfSense configuration.
 
 Import coverage is intentionally all-or-nothing for implemented resources:
 every registered resource implements Terraform import state, has a documented
