@@ -474,11 +474,12 @@ func haproxyFrontendAddressExtaddrCustom(value types.String, extaddr string) (st
 	if extaddr != "custom" {
 		return "", fmt.Errorf("extaddr_custom is only valid when extaddr is custom")
 	}
-	if _, err := netip.ParseAddr(extaddrCustom); err != nil {
+	parsedCustom, err := netip.ParseAddr(extaddrCustom)
+	if err != nil {
 		return "", fmt.Errorf("extaddr_custom must be a valid IPv4 or IPv6 address: %w", err)
 	}
 
-	return extaddrCustom, nil
+	return parsedCustom.String(), nil
 }
 
 func haproxyFrontendAddressPort(value types.Int64) (int64, error) {

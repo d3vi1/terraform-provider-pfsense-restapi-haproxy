@@ -471,6 +471,15 @@ func TestHaproxyFrontendAddressValidation(t *testing.T) {
 	if _, err := validateHaproxyFrontendAddressPlan(validCustom); err != nil {
 		t.Fatalf("valid custom address rejected: %v", err)
 	}
+	canonicalCustom := validCustom
+	canonicalCustom.ExtaddrCustom = types.StringValue("2001:0DB8:0000:0000:0000:0000:0000:0010")
+	canonicalKeys, err := validateHaproxyFrontendAddressPlan(canonicalCustom)
+	if err != nil {
+		t.Fatalf("valid expanded IPv6 custom address rejected: %v", err)
+	}
+	if canonicalKeys.extaddrCustom != "2001:db8::10" {
+		t.Fatalf("canonical custom address = %q, want 2001:db8::10", canonicalKeys.extaddrCustom)
+	}
 
 	tests := map[string]haproxyFrontendAddressModel{
 		"frontend slash": func() haproxyFrontendAddressModel {
