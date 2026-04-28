@@ -32,10 +32,10 @@ published documentation.
 | `/api/v2/services/haproxy/backends` | GET, PUT, DELETE | Plural | HAProxyBackend | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/file` | GET, POST, PATCH, DELETE | Singular | HAProxyFile | pfSense-pkg-haproxy | Deferred pending UAT; not implemented |
 | `/api/v2/services/haproxy/files` | GET, PUT, DELETE | Plural | HAProxyFile | pfSense-pkg-haproxy | Deferred pending UAT; not implemented |
-| `/api/v2/services/haproxy/frontend/acl` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendACL | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontend/acls` | GET, DELETE | Plural | HAProxyFrontendACL | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontend/action` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendAction | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontend/actions` | GET, DELETE | Plural | HAProxyFrontendAction | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/frontend/acl` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendACL | pfSense-pkg-haproxy | Implemented in M5-02; UAT pending |
+| `/api/v2/services/haproxy/frontend/acls` | GET, DELETE | Plural | HAProxyFrontendACL | pfSense-pkg-haproxy | Implemented in M5-02 for GET lookup only; plural DELETE intentionally unused; UAT pending |
+| `/api/v2/services/haproxy/frontend/action` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendAction | pfSense-pkg-haproxy | Implemented in M5-02; UAT pending |
+| `/api/v2/services/haproxy/frontend/actions` | GET, DELETE | Plural | HAProxyFrontendAction | pfSense-pkg-haproxy | Implemented in M5-02 for GET lookup only; plural DELETE intentionally unused; UAT pending |
 | `/api/v2/services/haproxy/frontend/address` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendAddress | pfSense-pkg-haproxy | Implemented in M4-02 for POST/PATCH/DELETE; UAT pending |
 | `/api/v2/services/haproxy/frontend/addresses` | GET, DELETE | Plural | HAProxyFrontendAddress | pfSense-pkg-haproxy | Implemented in M4-02 for GET lookup only; plural DELETE intentionally unused; UAT pending |
 | `/api/v2/services/haproxy/frontend/certificate` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Implemented in M4-03 for POST/DELETE; PATCH intentionally unused; UAT pending |
