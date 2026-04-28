@@ -40,10 +40,10 @@ published documentation.
 | `/api/v2/services/haproxy/frontend/addresses` | GET, DELETE | Plural | HAProxyFrontendAddress | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/certificate` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/certificates` | GET, DELETE | Plural | HAProxyFrontendCertificate | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontend` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontend | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/frontend` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontend | pfSense-pkg-haproxy | Implemented in M4-01; UAT pending |
 | `/api/v2/services/haproxy/frontend/error_file` | GET, POST, PATCH, DELETE | Singular | HAProxyFrontendErrorFile | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/frontend/error_files` | GET, DELETE | Plural | HAProxyFrontendErrorFile | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/frontends` | GET, PUT, DELETE | Plural | HAProxyFrontend | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/frontends` | GET, PUT, DELETE | Plural | HAProxyFrontend | pfSense-pkg-haproxy | Implemented in M4-01 for GET lookup only; plural PUT/DELETE intentionally unused; UAT pending |
 | `/api/v2/services/haproxy/settings/dns_resolver` | GET, POST, PATCH, DELETE | Singular | HAProxyDNSResolver | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/settings/dns_resolvers` | GET, DELETE | Plural | HAProxyDNSResolver | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/settings/email_mailer` | GET, POST, PATCH, DELETE | Singular | HAProxyEmailMailer | pfSense-pkg-haproxy | Pending |

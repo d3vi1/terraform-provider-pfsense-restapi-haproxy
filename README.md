@@ -8,10 +8,11 @@ Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
 an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
 apply/reload lifecycle, `pfsense_haproxy_backend` manages top-level HAProxy
 backends by natural name, and `pfsense_haproxy_backend_server` manages backend
-server children by parent/backend name and server name. Backend and backend
-server lookup data sources are available for read-only references to existing
-HAProxy objects. Additional HAProxy resources are tracked through GitHub issues
-and milestones.
+server children by parent/backend name and server name.
+`pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name.
+Backend and backend server lookup data sources are available for read-only
+references to existing HAProxy objects. Additional HAProxy resources are tracked
+through GitHub issues and milestones.
 
 ## Requirements
 
@@ -202,6 +203,36 @@ stable `backend_name/server_name` natural key; transient pfSense parent/child
 REST IDs are not exposed. Missing parent, missing child, or duplicate child
 matches return diagnostics. Data sources are lookup-only and cannot be imported.
 
+## HAProxy frontends
+
+`resource "pfsense_haproxy_frontend"` manages top-level HAProxy frontends:
+
+- Create sends `POST /services/haproxy/frontend`.
+- Read resolves by frontend name with
+  `GET /services/haproxy/frontends?name=...`.
+- Update resolves the current pfSense object ID by name, then sends
+  `PATCH /services/haproxy/frontend` with that ID and changed scalar fields.
+- Delete resolves the current pfSense object ID by name, then sends
+  `DELETE /services/haproxy/frontend?id=...`.
+- Import uses the frontend name, for example
+  `terraform import pfsense_haproxy_frontend.app app_frontend`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses the frontend name as the stable ID because pfSense object
+IDs are implementation details and may not be durable across config rewrites.
+The resource schema is intentionally conservative: it exposes required `name`
+and `type` plus selected scalar fields for basic HTTP/TCP frontend lifecycle.
+Only `http` and `tcp` are supported for `type`; `https` is deferred until
+certificate ownership is modeled. Addresses, ACLs, actions, certificates, error
+files, `advanced`, `advanced_bind`, and default certificate ownership remain out
+of scope.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/frontends?name=...` returns frontend objects with `id`,
+`name`, and `type`; create/update/delete use singular frontend endpoints; and
+frontend writes only mark HAProxy configuration pending until a separate
+`pfsense_haproxy_apply` resource is used.
+
 ## Development
 
 ```bash
@@ -217,6 +248,7 @@ make testacc
 - `pfsense_haproxy_apply`
 - `pfsense_haproxy_backend`
 - `pfsense_haproxy_backend_server`
+- `pfsense_haproxy_frontend`
 - `pfsense_haproxy_settings`
 
 ## Data Sources
@@ -228,7 +260,6 @@ make testacc
 
 ## Planned resources
 
-- `pfsense_haproxy_frontend`
 - `pfsense_haproxy_frontend_address`
 - `pfsense_haproxy_frontend_acl`
 - `pfsense_haproxy_frontend_action`
@@ -259,10 +290,23 @@ resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
   weight       = 10
 }
 
+resource "pfsense_haproxy_frontend" "addressvalidator" {
+  name               = "addressvalidator_uat_http"
+  type               = "http"
+  descr              = "Address Validator UAT HTTP frontend"
+  status             = "active"
+  backend_serverpool = pfsense_haproxy_backend.addressvalidator.name
+  max_connections    = 2000
+  client_timeout     = 30000
+  forwardfor         = true
+  httpclose          = "http-server-close"
+}
+
 resource "pfsense_haproxy_apply" "addressvalidator" {
   depends_on = [
     pfsense_haproxy_backend.addressvalidator,
     pfsense_haproxy_backend_server.addressvalidator_01,
+    pfsense_haproxy_frontend.addressvalidator,
   ]
 
   triggers = {
@@ -283,6 +327,15 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
         ssl             = pfsense_haproxy_backend_server.addressvalidator_01.ssl
         sslserververify = pfsense_haproxy_backend_server.addressvalidator_01.sslserververify
       }
+    }))
+    frontend = sha1(jsonencode({
+      name               = pfsense_haproxy_frontend.addressvalidator.name
+      type               = pfsense_haproxy_frontend.addressvalidator.type
+      backend_serverpool = pfsense_haproxy_frontend.addressvalidator.backend_serverpool
+      max_connections    = pfsense_haproxy_frontend.addressvalidator.max_connections
+      client_timeout     = pfsense_haproxy_frontend.addressvalidator.client_timeout
+      forwardfor         = pfsense_haproxy_frontend.addressvalidator.forwardfor
+      httpclose          = pfsense_haproxy_frontend.addressvalidator.httpclose
     }))
   }
 }
