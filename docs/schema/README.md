@@ -76,3 +76,10 @@ For M2-01, `pfsense_haproxy_settings` uses the upstream
 Terraform manages only scalar fields, treats `advanced` as sensitive, and does
 not manage nested DNS resolver or email mailer children until UAT confirms their
 ownership model.
+
+For M2-02, `pfsense_haproxy_apply` uses the upstream `HAProxyApply.inc` model as
+a conservative implementation reference: `GET /services/haproxy/apply` is
+assumed to return an `applied` boolean, and `POST /services/haproxy/apply` is
+assumed to start HAProxy configuration application. The Terraform resource keeps
+apply explicit with user-controlled `triggers`; settings and other durable
+resources must not auto-apply pending changes.

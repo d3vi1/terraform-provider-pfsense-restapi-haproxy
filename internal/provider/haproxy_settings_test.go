@@ -23,11 +23,17 @@ func TestProviderRegistersHaproxySettings(t *testing.T) {
 	provider := &haproxyProvider{}
 
 	resources := provider.Resources(context.Background())
+	if !resourceTypeRegistered(resources, "pfsense_haproxy_apply") {
+		t.Fatalf("pfsense_haproxy_apply resource was not registered")
+	}
 	if !resourceTypeRegistered(resources, "pfsense_haproxy_settings") {
 		t.Fatalf("pfsense_haproxy_settings resource was not registered")
 	}
 
 	dataSources := provider.DataSources(context.Background())
+	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_apply") {
+		t.Fatalf("pfsense_haproxy_apply data source was not registered")
+	}
 	if !dataSourceTypeRegistered(dataSources, "pfsense_haproxy_settings") {
 		t.Fatalf("pfsense_haproxy_settings data source was not registered")
 	}
@@ -356,7 +362,7 @@ func haproxySettingsDataSourceSchema(t *testing.T) datasourceschema.Schema {
 	return resp.Schema
 }
 
-func testResourcePlan(t *testing.T, schema resourceschema.Schema, model haproxySettingsModel) tfsdk.Plan {
+func testResourcePlan(t *testing.T, schema resourceschema.Schema, model any) tfsdk.Plan {
 	t.Helper()
 
 	plan := tfsdk.Plan{Schema: schema}
@@ -368,7 +374,7 @@ func testResourcePlan(t *testing.T, schema resourceschema.Schema, model haproxyS
 	return plan
 }
 
-func testResourceState(t *testing.T, schema resourceschema.Schema, model haproxySettingsModel) tfsdk.State {
+func testResourceState(t *testing.T, schema resourceschema.Schema, model any) tfsdk.State {
 	t.Helper()
 
 	state := tfsdk.State{Schema: schema}

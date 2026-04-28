@@ -26,6 +26,9 @@ Primary references:
 - HAProxy write endpoints do not apply pending service changes immediately in
   the public OpenAPI metadata. Use an explicit apply workflow instead of hidden
   automatic reloads.
+- Model HAProxy apply as an explicit action resource and read-only status data
+  source. Do not add auto-apply flags to settings or durable resources unless a
+  later issue intentionally changes that contract.
 - Mark actual secret-bearing attributes as sensitive when implemented. Public
   schema names include `stats_password`, `HAProxyFile.content`, certificate
   references, and custom/advanced HAProxy text fields that may carry private
@@ -50,7 +53,7 @@ Primary references:
 | `pfsense_haproxy_file` | HAProxyFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/file`; `GET /files` | Create requires `name`, `content`. Patch requires `id`. | Defer until routes require managed HAProxy files. `content` must be sensitive in Terraform state and excluded from schema fixtures. |
 | `pfsense_haproxy_settings_dns_resolver` | HAProxyDNSResolver | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/settings/dns_resolver` | Create requires `name`, `server`. Patch requires `id`. | Model as settings child only if needed. Pending UAT confirmation of nesting and IDs. |
 | `pfsense_haproxy_settings_email_mailer` | HAProxyEmailMailer | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/settings/email_mailer` | Create requires `name`, `mailserver`. Patch requires `id`. | Model as settings child only if needed. Pending UAT confirmation of nesting and IDs. |
-| `pfsense_haproxy_apply` | HAProxyApply | `GET/POST /api/v2/services/haproxy/apply` | `GET` reports `applied`; `POST` applies pending changes. | Not a durable config resource. Implement as an explicit apply/action workflow after CRUD resources exist. |
+| `pfsense_haproxy_apply` | HAProxyApply | `GET/POST /api/v2/services/haproxy/apply` | `GET` reports `applied`; `POST` applies pending changes. | Implemented in M2-02 as a status data source and singleton action resource with fixed ID `apply`, user-controlled `triggers`, POST guarded by the shared client write guard, bounded polling, state-only delete, and no hidden apply behavior in other resources. |
 
 ## Pending UAT Questions
 
@@ -62,6 +65,10 @@ Primary references:
 - Confirm no endpoint-side `apply` default is triggered by
   `PATCH /api/v2/services/haproxy/settings` when no apply control parameter is
   supplied.
+- Confirm `GET /api/v2/services/haproxy/apply` returns a boolean `applied`
+  field on UAT and whether any extra error/status fields should be exposed.
+- Confirm `POST /api/v2/services/haproxy/apply` returns quickly enough for the
+  current poll defaults or whether UAT needs different timeout guidance.
 - Exact response envelope for create/update/delete, including where object IDs are
   returned.
 - Whether UAT uses numeric IDs, string IDs, or mixed IDs for every HAProxy model.
