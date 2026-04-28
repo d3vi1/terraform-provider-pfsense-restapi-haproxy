@@ -14,6 +14,10 @@ import (
 	datasourceschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -69,7 +73,7 @@ var haproxySettingsAttributes = []settingsAttribute{
 	{Name: "email_to", JSONName: "email_to", Kind: settingsAttributeString, Description: "Recipient email address for HAProxy SMTP alerts."},
 	{Name: "sslcompatibilitymode", JSONName: "sslcompatibilitymode", Kind: settingsAttributeString, Description: "SSL/TLS compatibility mode: auto, modern, intermediate, or old."},
 	{Name: "ssldefaultdhparam", JSONName: "ssldefaultdhparam", Kind: settingsAttributeInt64, Description: "Default Diffie-Hellman parameter size."},
-	{Name: "advanced", JSONName: "advanced", Kind: settingsAttributeString, Description: "Base64-encoded additional HAProxy global settings. This may contain sensitive material.", Sensitive: true},
+	{Name: "advanced", JSONName: "advanced", Kind: settingsAttributeString, Description: "Additional HAProxy global settings as plain text. pfREST stores this field encoded internally but represents it as decoded text through the REST API. This may contain sensitive material.", Sensitive: true},
 	{Name: "enablesync", JSONName: "enablesync", Kind: settingsAttributeBool, Description: "Include HAProxy configuration in pfSense HA sync when configured."},
 }
 
@@ -316,24 +320,27 @@ func haproxySettingsResourceSchemaAttributes() map[string]resourceschema.Attribu
 		switch attribute.Kind {
 		case settingsAttributeBool:
 			attributes[attribute.Name] = resourceschema.BoolAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: attribute.Description,
-				Sensitive:   attribute.Sensitive,
+				Optional:      true,
+				Computed:      true,
+				Description:   attribute.Description,
+				Sensitive:     attribute.Sensitive,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			}
 		case settingsAttributeInt64:
 			attributes[attribute.Name] = resourceschema.Int64Attribute{
-				Optional:    true,
-				Computed:    true,
-				Description: attribute.Description,
-				Sensitive:   attribute.Sensitive,
+				Optional:      true,
+				Computed:      true,
+				Description:   attribute.Description,
+				Sensitive:     attribute.Sensitive,
+				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			}
 		case settingsAttributeString:
 			attributes[attribute.Name] = resourceschema.StringAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: attribute.Description,
-				Sensitive:   attribute.Sensitive,
+				Optional:      true,
+				Computed:      true,
+				Description:   attribute.Description,
+				Sensitive:     attribute.Sensitive,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			}
 		}
 	}

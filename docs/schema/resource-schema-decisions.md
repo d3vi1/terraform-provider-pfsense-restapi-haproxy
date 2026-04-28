@@ -56,8 +56,9 @@ Primary references:
 
 - Confirm the implemented scalar field response names and primitive types for
   `pfsense_haproxy_settings` on the approved UAT firewall.
-- Confirm whether `advanced` is returned and accepted as Base64 text, matching
-  the upstream `Base64Field` model.
+- Confirm `advanced` live behavior on UAT. Upstream pfREST `Base64Field`
+  documentation says API representation is decoded plain text while pfSense
+  stores it encoded internally.
 - Confirm no endpoint-side `apply` default is triggered by
   `PATCH /api/v2/services/haproxy/settings` when no apply control parameter is
   supplied.

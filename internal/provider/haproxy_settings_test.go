@@ -59,7 +59,7 @@ func TestHaproxySettingsDataSourceReadUsesGET(t *testing.T) {
 				"hard_stop_after": "15m",
 				"localstatsport": "8404",
 				"log-send-hostname": "fw-uat",
-				"advanced": "Z2xvYmFsCg==",
+				"advanced": "global\n  tune.ssl.default-dh-param 2048\n",
 				"dns_resolvers": [{"name": "ignored"}],
 				"email_mailers": [{"name": "ignored"}]
 			}
@@ -108,7 +108,7 @@ func TestHaproxySettingsDataSourceReadUsesGET(t *testing.T) {
 	if state.LogSendHostname.ValueString() != "fw-uat" {
 		t.Fatalf("log_send_hostname = %q", state.LogSendHostname.ValueString())
 	}
-	if state.Advanced.ValueString() != "Z2xvYmFsCg==" {
+	if state.Advanced.ValueString() != "global\n  tune.ssl.default-dh-param 2048\n" {
 		t.Fatalf("advanced not read")
 	}
 }
@@ -199,7 +199,7 @@ func TestHaproxySettingsResourceUpdatePatchesChangedFieldsOnly(t *testing.T) {
 					"enable": true,
 					"maxconn": 250,
 					"log-send-hostname": "fw-uat",
-					"advanced": "dW5jaGFuZ2Vk"
+					"advanced": "unchanged advanced text"
 				}
 			}`))
 		default:
@@ -218,7 +218,7 @@ func TestHaproxySettingsResourceUpdatePatchesChangedFieldsOnly(t *testing.T) {
 	prior.Enable = types.BoolValue(false)
 	prior.Maxconn = types.Int64Value(100)
 	prior.LogSendHostname = types.StringValue("")
-	prior.Advanced = types.StringValue("dW5jaGFuZ2Vk")
+	prior.Advanced = types.StringValue("unchanged advanced text")
 
 	plan := prior
 	plan.Enable = types.BoolValue(true)
