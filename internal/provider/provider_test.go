@@ -204,6 +204,7 @@ func TestResolveConfigRejectsInvalidEndpoint(t *testing.T) {
 		"ftp://pfsense.example.com",
 		"https://",
 		"://pfsense.example.com",
+		"https://user:pass@pfsense.example.com",
 		"https://pfsense.example.com?query=1",
 		"https://pfsense.example.com#fragment",
 	} {

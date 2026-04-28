@@ -255,6 +255,9 @@ func validateEndpoint(endpoint string) diag.Diagnostics {
 		diags.AddError("Invalid endpoint", "endpoint must be an absolute http(s) URL, for example https://pfsense.example.com.")
 		return diags
 	}
+	if parsed.User != nil {
+		diags.AddError("Invalid endpoint", "endpoint must not include embedded username or password credentials; use api_key or username/password provider arguments instead.")
+	}
 	switch parsed.Scheme {
 	case "http", "https":
 	default:
