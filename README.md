@@ -12,6 +12,8 @@ server children by parent/backend name and server name.
 `pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name,
 and `pfsense_haproxy_frontend_address` manages frontend bind/listen address
 children by parent/frontend name, listen address, custom address, and port.
+`pfsense_haproxy_frontend_certificate` attaches existing pfSense certificate
+references to frontends without managing certificate or private key material.
 Backend and backend server lookup data sources are available for read-only
 references to existing HAProxy objects. Additional HAProxy resources are tracked
 through GitHub issues and milestones.
@@ -224,10 +226,11 @@ Terraform state uses the frontend name as the stable ID because pfSense object
 IDs are implementation details and may not be durable across config rewrites.
 The resource schema is intentionally conservative: it exposes required `name`
 and `type` plus selected scalar fields for basic HTTP/TCP frontend lifecycle.
-Only `http` and `tcp` are supported for `type`; `https` is deferred until
-certificate ownership is modeled. Addresses, ACLs, actions, certificates, error
-files, `advanced`, `advanced_bind`, and default certificate ownership remain out
-of scope.
+Only `http` and `tcp` are supported for `type`; any separate `https` frontend
+mode remains deferred until UAT confirms how it interacts with frontend address
+SSL offload and certificate attachments. Addresses, ACLs, actions, error files,
+`advanced`, `advanced_bind`, and default certificate ownership remain out of
+scope for this top-level frontend resource.
 
 UAT validation is still pending. The implementation assumes
 `GET /services/haproxy/frontends?name=...` returns frontend objects with `id`,
@@ -270,6 +273,39 @@ returns frontend address objects with `id`, `extaddr`, `extaddr_custom`, and
 contract; and frontend address writes only mark HAProxy configuration pending
 until a separate `pfsense_haproxy_apply` resource is used.
 
+## HAProxy frontend certificates
+
+`resource "pfsense_haproxy_frontend_certificate"` attaches existing pfSense
+certificate references to frontend objects:
+
+- Create re-queries the parent frontend by name, checks for an existing
+  certificate attachment with
+  `GET /services/haproxy/frontend/certificates?parent_id=...&ssl_certificate=...`,
+  then sends `POST /services/haproxy/frontend/certificate`.
+- Read re-queries the parent frontend by name and removes Terraform state if
+  the parent frontend or child certificate attachment no longer exists.
+- Update is intentionally unsupported. `frontend_name` and `ssl_certificate`
+  both require replacement.
+- Delete re-queries the parent frontend and child certificate before sending
+  `DELETE /services/haproxy/frontend/certificate?parent_id=...&id=...`; if
+  either is already gone, Terraform state is removed.
+- Import uses `frontend_name/ssl_certificate`, for example
+  `terraform import pfsense_haproxy_frontend_certificate.app app_frontend/existing_cert_ref`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses `frontend_name/ssl_certificate` as the stable ID because
+pfSense object IDs are implementation details and may change across config
+rewrites. The schema accepts only an existing certificate reference/name. It
+does not expose certificate bodies, private keys, PEM content, advanced fields,
+placement controls, or transient REST IDs.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/frontend/certificates?parent_id=...&ssl_certificate=...`
+returns certificate attachment objects with `id` and `ssl_certificate`;
+create/delete use the documented child `parent_id` contract; and certificate
+attachment writes only mark HAProxy configuration pending until a separate
+`pfsense_haproxy_apply` resource is used.
+
 ## Development
 
 ```bash
@@ -287,6 +323,7 @@ make testacc
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
 - `pfsense_haproxy_frontend_address`
+- `pfsense_haproxy_frontend_certificate`
 - `pfsense_haproxy_settings`
 
 ## Data Sources
@@ -300,7 +337,6 @@ make testacc
 
 - `pfsense_haproxy_frontend_acl`
 - `pfsense_haproxy_frontend_action`
-- `pfsense_haproxy_frontend_certificate`
 - `pfsense_haproxy_file`
 
 ## Example ingress contract
@@ -346,12 +382,18 @@ resource "pfsense_haproxy_frontend_address" "addressvalidator_https" {
   extaddr_ssl    = true
 }
 
+resource "pfsense_haproxy_frontend_certificate" "addressvalidator_https" {
+  frontend_name   = pfsense_haproxy_frontend.addressvalidator.name
+  ssl_certificate = "existing_uat_certificate_ref"
+}
+
 resource "pfsense_haproxy_apply" "addressvalidator" {
   depends_on = [
     pfsense_haproxy_backend.addressvalidator,
     pfsense_haproxy_backend_server.addressvalidator_01,
     pfsense_haproxy_frontend.addressvalidator,
     pfsense_haproxy_frontend_address.addressvalidator_https,
+    pfsense_haproxy_frontend_certificate.addressvalidator_https,
   ]
 
   triggers = {
@@ -388,6 +430,11 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
         extaddr_custom = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_custom
         extaddr_port   = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_port
         extaddr_ssl    = pfsense_haproxy_frontend_address.addressvalidator_https.extaddr_ssl
+      }
+    }))
+    frontend_certificates = sha1(jsonencode({
+      https = {
+        ssl_certificate = pfsense_haproxy_frontend_certificate.addressvalidator_https.ssl_certificate
       }
     }))
   }

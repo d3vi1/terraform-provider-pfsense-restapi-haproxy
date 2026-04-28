@@ -113,9 +113,10 @@ For M4-01, `pfsense_haproxy_frontend` uses the upstream
 Terraform stores frontend names as stable natural keys, resolves the current
 pfSense object ID from `GET /services/haproxy/frontends?name=...` before
 update/delete, and manages only selected HTTP/TCP scalar fields. Addresses,
-ACLs, actions, certificates, error files, `advanced`, `advanced_bind`, and
-default certificate ownership remain pending UAT confirmation and separate
-ownership decisions.
+ACLs, actions, error files, `advanced`, `advanced_bind`, and default
+certificate ownership remain pending UAT confirmation and separate ownership
+decisions. Frontend certificate attachments are modeled separately by
+`pfsense_haproxy_frontend_certificate`.
 
 For M4-02, `pfsense_haproxy_frontend_address` uses the upstream
 `HAProxyFrontendAddress.inc` model as a conservative implementation reference.
@@ -125,3 +126,12 @@ write, resolves the current child ID before update/delete, and manages only
 `extaddr`, `extaddr_custom`, `extaddr_port`, and `extaddr_ssl`. The
 `exaddr_advanced` address field and placement/order controls remain pending UAT
 confirmation.
+
+For M4-03, `pfsense_haproxy_frontend_certificate` uses the upstream
+`HAProxyFrontendCertificate.inc` model as a conservative implementation
+reference. Terraform stores `frontend_name/ssl_certificate` as a stable natural
+key, resolves the current parent frontend ID before every child write, resolves
+the current child ID before delete, and manages only the existing
+`ssl_certificate` reference. The resource intentionally does not expose
+certificate bodies, private key material, PEM content, placement controls,
+advanced fields, or a PATCH update path.

@@ -18,9 +18,9 @@ Primary references:
   deletes.
 - Treat child operations as parent-addressed API calls. Published OpenAPI
   documents `parent_id` plus child `id` for child reads, patches, and deletes.
-- Model Terraform resource IDs to preserve both parent and child API IDs for
-  child resources. The exact serialized ID format remains pending UAT response
-  confirmation.
+- Model Terraform resource IDs from stable natural keys. Resolve transient
+  parent and child API IDs from plural lookup endpoints immediately before
+  writes and deletes.
 - Do not use plural `PUT` replace-all endpoints or plural query `DELETE`
   endpoints for normal single-resource lifecycle operations.
 - HAProxy write endpoints do not apply pending service changes immediately in
@@ -30,9 +30,9 @@ Primary references:
   source. Do not add auto-apply flags to settings or durable resources unless a
   later issue intentionally changes that contract.
 - Mark actual secret-bearing attributes as sensitive when implemented. Public
-  schema names include `stats_password`, `HAProxyFile.content`, certificate
-  references, and custom/advanced HAProxy text fields that may carry private
-  material.
+  schema names include `stats_password`, `HAProxyFile.content`, certificate or
+  private-key bodies, and custom/advanced HAProxy text fields that may carry
+  private material.
 
 ## Resource Mapping
 
@@ -44,11 +44,11 @@ Primary references:
 | `pfsense_haproxy_backend_acl` | HAProxyBackendACL | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/acl` | Create requires `parent_id`, `name`, `expression`, `value`. Patch requires `parent_id`, `id`. | Child resource under backend. |
 | `pfsense_haproxy_backend_action` | HAProxyBackendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under backend. Conditional fields need UAT examples before strict Terraform validation. |
 | `pfsense_haproxy_backend_error_file` | HAProxyBackendErrorFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/error_file` | Create requires `parent_id`, `errorcode`, `errorfile`. | Child resource under backend. Consider later if required for managed routes. |
-| `pfsense_haproxy_frontend` | HAProxyFrontend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend`; `GET /frontends` | Create requires `name` and `type`. Patch requires `id`. | Implemented in M4-01 as a durable top-level resource using frontend `name` as Terraform's stable natural key. Before update/delete, resolve pfSense's current object ID from `GET /frontends?name=...`. Manage only `name`, `type`, and selected scalar fields: `descr`, `status`, `max_connections`, `backend_serverpool`, `socket_stats`, `dontlognull`, `dontlog_normal`, `log_separate_errors`, `log_detailed`, `client_timeout`, `forwardfor`, and `httpclose`. Support `http` and `tcp` only; defer `https` until certificate ownership is modeled. Keep addresses, ACLs, actions, certificates, error files, `advanced`, `advanced_bind`, and default certificate ownership out of scope pending UAT ownership confirmation. |
+| `pfsense_haproxy_frontend` | HAProxyFrontend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend`; `GET /frontends` | Create requires `name` and `type`. Patch requires `id`. | Implemented in M4-01 as a durable top-level resource using frontend `name` as Terraform's stable natural key. Before update/delete, resolve pfSense's current object ID from `GET /frontends?name=...`. Manage only `name`, `type`, and selected scalar fields: `descr`, `status`, `max_connections`, `backend_serverpool`, `socket_stats`, `dontlognull`, `dontlog_normal`, `log_separate_errors`, `log_detailed`, `client_timeout`, `forwardfor`, and `httpclose`. Support `http` and `tcp` only; defer any separate `https` frontend type mode until UAT validates how it interacts with frontend address SSL offload and certificate attachments. Keep addresses, ACLs, actions, error files, `advanced`, `advanced_bind`, and default certificate ownership out of scope for this top-level resource. |
 | `pfsense_haproxy_frontend_address` | HAProxyFrontendAddress | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/address`; `GET /frontend/addresses` | Create requires `parent_id`, `extaddr`, `extaddr_custom`. Patch requires `parent_id`, `id`. | Implemented in M4-02 as a frontend child resource using `frontend_name/extaddr/extaddr_custom_or_-/extaddr_port` as Terraform's stable natural key. Before create/update/delete, resolve the current parent frontend ID by frontend name; before update/delete, resolve the current child ID by exact address fields under that parent. Manage only `extaddr`, `extaddr_custom`, `extaddr_port`, and `extaddr_ssl`; defer `exaddr_advanced` and placement until UAT validates sensitivity and ordering semantics. |
 | `pfsense_haproxy_frontend_acl` | HAProxyFrontendACL | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/acl` | Create requires `parent_id`, `name`, `expression`, `value`. Patch requires `parent_id`, `id`. | Child resource under frontend. |
 | `pfsense_haproxy_frontend_action` | HAProxyFrontendAction | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/action` | Create requires `parent_id` plus action-specific fields in the public schema. | Child resource under frontend. Conditional fields need UAT examples before strict Terraform validation. |
-| `pfsense_haproxy_frontend_certificate` | HAProxyFrontendCertificate | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/certificate` | Create requires `parent_id`; schema exposes `ssl_certificate`. | Child resource under frontend. Treat certificate identifiers as sensitive-adjacent and never capture certificate bodies. |
+| `pfsense_haproxy_frontend_certificate` | HAProxyFrontendCertificate | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/certificate`; `GET /frontend/certificates` | Create requires `parent_id`; schema exposes `ssl_certificate`. | Implemented in M4-03 as a frontend child resource using `frontend_name/ssl_certificate` as Terraform's stable natural key. Before create/delete, resolve the current parent frontend ID by frontend name; before delete, resolve the current child ID by exact certificate reference under that parent. Manage only existing `ssl_certificate` references; reject PEM/private-key-looking values; do not expose certificate bodies, private keys, placement, advanced fields, or a PATCH update path. |
 | `pfsense_haproxy_frontend_error_file` | HAProxyFrontendErrorFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/frontend/error_file` | Create requires `parent_id`, `errorcode`, `errorfile`. | Child resource under frontend. Consider later if required for managed routes. |
 | `pfsense_haproxy_file` | HAProxyFile | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/file`; `GET /files` | Create requires `name`, `content`. Patch requires `id`. | Defer until routes require managed HAProxy files. `content` must be sensitive in Terraform state and excluded from schema fixtures. |
 | `pfsense_haproxy_settings_dns_resolver` | HAProxyDNSResolver | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/settings/dns_resolver` | Create requires `name`, `server`. Patch requires `id`. | Model as settings child only if needed. Pending UAT confirmation of nesting and IDs. |
@@ -90,11 +90,18 @@ Primary references:
   whether `forwardfor` is rejected for TCP frontends server-side.
 - Confirm frontend address `placement` behavior before exposing any ordering
   control. The first implementation intentionally does not set placement.
+- Confirm `GET /api/v2/services/haproxy/frontend/certificates?parent_id=...&ssl_certificate=...`
+  returns exact frontend certificate attachment matches or, at minimum, a list
+  containing `id` and `ssl_certificate` fields that can be filtered
+  client-side.
+- Confirm whether frontend certificate attachments support ordering/placement
+  semantics on UAT. The first implementation intentionally does not set
+  placement and treats changes as replacement-only.
 - Whether published conditional fields such as `agent_port` and
   `persist_cookie_name` are required only when their enabling booleans are true
   on UAT.
 - Whether `https` frontend type should become a separate resource mode after
-  frontend certificate ownership is modeled.
+  frontend certificate attachment behavior is validated on UAT.
 - Whether conditional action fields can be omitted when unrelated to the chosen
   action.
 - Whether HAProxy and HAProxy-devel expose identical schema paths on this UAT

@@ -22,20 +22,29 @@ resource "pfsense_haproxy_frontend_address" "app_https" {
   extaddr_ssl   = true
 }
 
+resource "pfsense_haproxy_frontend_certificate" "app_https" {
+  frontend_name   = pfsense_haproxy_frontend.app.name
+  ssl_certificate = "existing_uat_certificate_ref"
+}
+
 # Explicit apply after frontend changes. There is intentionally no hidden
-# auto-apply in pfsense_haproxy_frontend, pfsense_haproxy_frontend_address, or
-# other durable HAProxy resources.
+# auto-apply in pfsense_haproxy_frontend, pfsense_haproxy_frontend_address,
+# pfsense_haproxy_frontend_certificate, or other durable HAProxy resources.
 #
 # UAT note: this assumes GET /services/haproxy/frontends returns objects with
 # stable names and transient pfSense IDs, and that POST/PATCH/DELETE frontend
 # writes only mark HAProxy configuration pending until pfsense_haproxy_apply runs.
 # Frontend address writes additionally assume child lookups by parent_id,
-# extaddr, extaddr_custom, and extaddr_port.
+# extaddr, extaddr_custom, and extaddr_port. Frontend certificate writes assume
+# child lookups by parent_id and ssl_certificate. Replace
+# existing_uat_certificate_ref with an existing pfSense certificate reference;
+# do not place PEM certificate or private key material in Terraform.
 resource "pfsense_haproxy_apply" "app_frontend" {
   depends_on = [
     pfsense_haproxy_backend.app,
     pfsense_haproxy_frontend.app,
     pfsense_haproxy_frontend_address.app_https,
+    pfsense_haproxy_frontend_certificate.app_https,
   ]
 
   triggers = {
@@ -61,6 +70,11 @@ resource "pfsense_haproxy_apply" "app_frontend" {
         extaddr_custom = pfsense_haproxy_frontend_address.app_https.extaddr_custom
         extaddr_port   = pfsense_haproxy_frontend_address.app_https.extaddr_port
         extaddr_ssl    = pfsense_haproxy_frontend_address.app_https.extaddr_ssl
+      }
+    }))
+    frontend_certificates = sha1(jsonencode({
+      https = {
+        ssl_certificate = pfsense_haproxy_frontend_certificate.app_https.ssl_certificate
       }
     }))
   }
