@@ -3,14 +3,13 @@ name: acceptance
 on:
   workflow_dispatch:
 
-concurrency:
-  group: acceptance-uat
-  cancel-in-progress: false
-
 jobs:
   acceptance:
     if: ${{ github.repository_owner == 'd3vi1' }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     env:
       PFSENSE_ENDPOINT: ${{ secrets.PFSENSE_ENDPOINT }}
       PFSENSE_API_KEY: ${{ secrets.PFSENSE_API_KEY }}
@@ -30,6 +29,31 @@ jobs:
           go-version-file: go.mod
           cache: true
       - uses: hashicorp/setup-terraform@v3
+      - name: wait for older acceptance runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 7200))
+          while true; do
+            older_run="$(
+              gh api -X GET "repos/${REPOSITORY}/actions/workflows/acceptance.yml/runs" \
+                -f status=in_progress \
+                --jq ".workflow_runs[] | select(.id < (${RUN_ID} | tonumber)) | .id" \
+                | head -n 1
+            )"
+            if [ -z "${older_run}" ]; then
+              break
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::Timed out waiting for older acceptance run ${older_run}"
+              exit 1
+            fi
+            echo "Waiting for older acceptance run ${older_run} to finish"
+            sleep 30
+          done
       - name: acceptance safety precheck
         run: |
           set -euo pipefail
