@@ -117,11 +117,15 @@ func (p *haproxyProvider) Configure(ctx context.Context, req provider.ConfigureR
 }
 
 func (p *haproxyProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{}
+	return []func() resource.Resource{
+		newHaproxySettingsResource,
+	}
 }
 
 func (p *haproxyProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		newHaproxySettingsDataSource,
+	}
 }
 
 func resolveConfig(config providerConfig) (resolvedConfig, diag.Diagnostics) {

@@ -70,3 +70,9 @@ As of 2026-04-28, live UAT schema capture is blocked from this environment:
 No live UAT fixture is committed for this issue. The endpoint inventory and
 resource decisions in this directory are based on primary pfREST documentation
 and are marked pending UAT confirmation.
+
+For M2-01, `pfsense_haproxy_settings` uses the upstream
+`HAProxySettings.inc` scalar model as a conservative implementation reference:
+Terraform manages only scalar fields, treats `advanced` as sensitive, and does
+not manage nested DNS resolver or email mailer children until UAT confirms their
+ownership model.

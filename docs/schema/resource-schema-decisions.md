@@ -35,7 +35,7 @@ Primary references:
 
 | Terraform resource | API model | Primary endpoints | Documented create/update shape | Decision |
 |--------------------|-----------|-------------------|--------------------------------|----------|
-| `pfsense_haproxy_settings` | HAProxySettings | `GET/PATCH /api/v2/services/haproxy/settings` | Settings patch body is partial; no create/delete. | Singleton resource. Import by fixed ID such as `settings` after UAT confirms response shape. |
+| `pfsense_haproxy_settings` | HAProxySettings | `GET/PATCH /api/v2/services/haproxy/settings` | Settings patch body is partial; no create/delete. | Implemented as split model in M2-01: data source reads settings; resource is singleton import-first with fixed ID `settings`, create blocked, update PATCH only, delete state-only, no apply/reload. |
 | `pfsense_haproxy_backend` | HAProxyBackend | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend`; `GET /backends` | Create requires `name`, `agent_port`, and `persist_cookie_name` in public OpenAPI. Patch requires `id`. | Durable top-level resource. Keep embedded collections read-only or ignored when managed by child resources. |
 | `pfsense_haproxy_backend_server` | HAProxyBackendServer | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/server` | Create requires `parent_id`, `name`, `address`, `port`. Patch requires `parent_id`, `id`. | Child resource under backend. Terraform ID must retain backend API ID and server API ID. |
 | `pfsense_haproxy_backend_acl` | HAProxyBackendACL | `GET/POST/PATCH/DELETE /api/v2/services/haproxy/backend/acl` | Create requires `parent_id`, `name`, `expression`, `value`. Patch requires `parent_id`, `id`. | Child resource under backend. |
@@ -54,6 +54,13 @@ Primary references:
 
 ## Pending UAT Questions
 
+- Confirm the implemented scalar field response names and primitive types for
+  `pfsense_haproxy_settings` on the approved UAT firewall.
+- Confirm whether `advanced` is returned and accepted as Base64 text, matching
+  the upstream `Base64Field` model.
+- Confirm no endpoint-side `apply` default is triggered by
+  `PATCH /api/v2/services/haproxy/settings` when no apply control parameter is
+  supplied.
 - Exact response envelope for create/update/delete, including where object IDs are
   returned.
 - Whether UAT uses numeric IDs, string IDs, or mixed IDs for every HAProxy model.
