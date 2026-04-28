@@ -503,6 +503,69 @@ func TestHaproxyBackendActionResourceImportThenUpdateMatchesPlanPayload(t *testi
 	}
 }
 
+func TestHaproxyBackendActionResourceImportThenUpdatePatchesPlannedPosition(t *testing.T) {
+	t.Parallel()
+
+	var patchPayload map[string]any
+	actionLookups := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case http.MethodGet + " /api/v2/services/haproxy/backends":
+			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":42,"name":"app_backend"}]}`))
+		case http.MethodGet + " /api/v2/services/haproxy/backend/actions":
+			actionLookups++
+			if actionLookups == 1 {
+				_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":8,"action":"http-request_allow","acl":"host_acl"},{"id":7,"action":"use_server","acl":"host_acl","server":"app01"}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":[{"id":7,"action":"use_server","acl":"host_acl","server":"app01"},{"id":8,"action":"http-request_allow","acl":"host_acl"}]}`))
+		case http.MethodPatch + " /api/v2/services/haproxy/backend/action":
+			if err := json.NewDecoder(r.Body).Decode(&patchPayload); err != nil {
+				t.Fatalf("decode PATCH payload: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"code":200,"status":"ok","data":null}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	actionResource := &haproxyBackendActionResource{
+		client: pfsense.NewClient(pfsense.Config{Endpoint: server.URL, APIKey: "test-key"}),
+	}
+	schema := haproxyBackendActionResourceSchema(t)
+	prior := nullHaproxyBackendActionModel()
+	prior.ID = types.StringValue("app_backend/route_app01")
+	prior.BackendName = types.StringValue("app_backend")
+	prior.Key = types.StringValue("route_app01")
+	plan := backendUseServerActionModel()
+	plan.Position = types.Int64Value(0)
+
+	resp := resource.UpdateResponse{
+		State: testResourceState(t, schema, prior),
+	}
+	actionResource.Update(context.Background(), resource.UpdateRequest{
+		Plan:  testResourcePlan(t, schema, plan),
+		State: testResourceState(t, schema, prior),
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %#v", resp.Diagnostics)
+	}
+
+	if patchPayload["parent_id"] != "42" || patchPayload["id"] != "7" || patchPayload["placement"] != float64(0) {
+		t.Fatalf("PATCH imported position update = %#v", patchPayload)
+	}
+	for _, forbidden := range []string{"key", "action", "acl", "server", "apply", "async"} {
+		if _, ok := patchPayload[forbidden]; ok {
+			t.Fatalf("PATCH unexpectedly included %q: %#v", forbidden, patchPayload)
+		}
+	}
+	if len(patchPayload) != 3 {
+		t.Fatalf("PATCH should only include ids and placement for imported position update, got %#v", patchPayload)
+	}
+}
+
 func TestHaproxyBackendActionResourceDeleteAfterReorderResolvesCurrentChildID(t *testing.T) {
 	t.Parallel()
 

@@ -353,7 +353,7 @@ func (r *haproxyBackendActionResource) Update(ctx context.Context, req resource.
 	if !priorHasPayload {
 		lookupPayload = planPayload
 	}
-	_, actionID, found, err := findHaproxyBackendAction(ctx, r.client, parentID, keys, lookupPayload)
+	currentAction, actionID, found, err := findHaproxyBackendAction(ctx, r.client, parentID, keys, lookupPayload)
 	if err != nil {
 		resp.Diagnostics.AddError("Find HAProxy backend action before update failed", backendActionLookupErrorDetail(keys, err))
 		return
@@ -370,6 +370,16 @@ func (r *haproxyBackendActionResource) Update(ctx context.Context, req resource.
 				resp.Diagnostics.AddError("Update HAProxy backend action failed", err.Error())
 				return
 			}
+		}
+	} else if !plan.Position.IsNull() && !plan.Position.IsUnknown() && !plan.Position.Equal(currentAction.Position) {
+		patch := map[string]any{
+			"parent_id": parentID,
+			"id":        actionID,
+			"placement": plan.Position.ValueInt64(),
+		}
+		if err := r.client.Patch(ctx, haproxyBackendActionPath, patch, nil); err != nil {
+			resp.Diagnostics.AddError("Update HAProxy backend action failed", err.Error())
+			return
 		}
 	}
 
