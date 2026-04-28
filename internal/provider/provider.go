@@ -120,6 +120,8 @@ func (p *haproxyProvider) Resources(_ context.Context) []func() resource.Resourc
 	return []func() resource.Resource{
 		newHaproxyApplyResource,
 		newHaproxyBackendResource,
+		newHaproxyBackendACLResource,
+		newHaproxyBackendActionResource,
 		newHaproxyBackendServerResource,
 		newHaproxyFrontendResource,
 		newHaproxyFrontendAddressResource,

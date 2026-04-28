@@ -8,7 +8,10 @@ Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
 an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
 apply/reload lifecycle, `pfsense_haproxy_backend` manages top-level HAProxy
 backends by natural name, and `pfsense_haproxy_backend_server` manages backend
-server children by parent/backend name and server name.
+server children by parent/backend name and server name. Backend ACLs and
+backend actions are implemented as ordered child resources; ACLs use
+`backend_name/name` as their stable ID, while anonymous actions use a
+Terraform-only `key` plus exact payload matching.
 `pfsense_haproxy_frontend` manages top-level HAProxy frontends by natural name,
 and `pfsense_haproxy_frontend_address` manages frontend bind/listen address
 children by parent/frontend name, listen address, custom address, and port.
@@ -154,9 +157,10 @@ Terraform state uses the backend name as the stable ID because pfSense object
 IDs are implementation details and may not be durable across config rewrites.
 The resource schema is intentionally conservative: it exposes the backend name
 and selected scalar fields needed for common backend creation, including health
-check, agent check, and cookie persistence controls. Nested servers, ACLs,
-actions, error files, stats, and advanced pass-through text remain out of scope
-until their ownership and sensitivity model is validated.
+check, agent check, and cookie persistence controls. Backend servers, ACLs, and
+actions are managed by separate child resources. Error files, stats, and
+advanced pass-through text remain out of scope until their ownership and
+sensitivity model is validated.
 
 UAT validation is still pending. The implementation assumes
 `GET /services/haproxy/backends?name=...` returns backend objects with `id` and
@@ -208,6 +212,73 @@ then queries child servers under the current parent ID. The returned `id` is the
 stable `backend_name/server_name` natural key; transient pfSense parent/child
 REST IDs are not exposed. Missing parent, missing child, or duplicate child
 matches return diagnostics. Data sources are lookup-only and cannot be imported.
+
+## HAProxy backend ACLs
+
+`resource "pfsense_haproxy_backend_acl"` manages ordered backend ACL children:
+
+- Create re-queries the parent backend by name, checks for an existing ACL with
+  `GET /services/haproxy/backend/acls?parent_id=...&name=...`, then sends
+  `POST /services/haproxy/backend/acl`.
+- Read re-queries the parent backend by name, finds the ACL by exact name, and
+  records `position` from the ordered plural response.
+- Update re-queries the parent backend and ACL before sending
+  `PATCH /services/haproxy/backend/acl` with current `parent_id`, child `id`,
+  changed scalar fields, and `placement` when `position` changes.
+- Delete re-queries current parent/child IDs before sending
+  `DELETE /services/haproxy/backend/acl?parent_id=...&id=...`.
+- Import uses `backend_name/acl_name`, for example
+  `terraform import pfsense_haproxy_backend_acl.host app_backend/host_acl`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Terraform state uses `backend_name/name` as the stable ID. `position` is
+zero-based and maps to pfREST `placement` on create/update; when omitted,
+Terraform reads the live order from the plural ACL list. Duplicate ACL names
+under one backend are rejected because they cannot be managed safely by natural
+key.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/backend/acls?parent_id=...&name=...` returns ACL objects
+with `id`, `name`, `expression`, and `value`; full plural reads preserve backend
+ACL order; and backend ACL writes only mark HAProxy configuration pending until
+a separate `pfsense_haproxy_apply` resource is used.
+
+## HAProxy backend actions
+
+`resource "pfsense_haproxy_backend_action"` manages ordered backend action
+children:
+
+- `key` is a Terraform-only identity component. It is never sent to pfSense.
+- Create/read/update/delete always re-query the parent backend by name.
+- Live actions are matched by normalized action payload fields: `action`, `acl`,
+  and the conditional field(s) required by the selected action. Transient `id`,
+  `parent_id`, `position`, and `key` are excluded from matching.
+- Duplicate live payload matches return a diagnostic requiring cleanup or a more
+  unique action payload before Terraform can manage the action.
+- `position` is zero-based and maps to pfREST `placement` on create/update.
+- Import uses `backend_name/key`, for example
+  `terraform import pfsense_haproxy_backend_action.route app_backend/route_app01`.
+- No HAProxy apply/reload is triggered by this resource.
+
+Supported backend action choices follow the pfREST `HAProxyBackendAction`
+model, including `use_server`, `custom`, HTTP request/response mutations, HTTP
+after-response mutations, and TCP request/response actions. Conditional fields
+are validated conservatively: Terraform requires the field(s) pfREST marks
+required for the selected action and rejects non-null fields that are not
+applicable to that action.
+
+Because pfSense backend actions do not expose a stable name, import initializes
+only `backend_name/key`; the resource configuration must include the exact
+unique payload so the next refresh/apply can match the live action. If multiple
+existing actions have the same normalized payload, clean up duplicates before
+importing.
+
+UAT validation is still pending. The implementation assumes
+`GET /services/haproxy/backend/actions?parent_id=...` returns ordered backend
+action objects with transient `id` and action payload fields; dynamic pfREST
+internal names are action-prefixed, with `lua_function` mapped to
+`lua-function`; and backend action writes only mark HAProxy configuration
+pending until a separate `pfsense_haproxy_apply` resource is used.
 
 ## HAProxy frontends
 
@@ -340,6 +411,8 @@ make testacc
 
 - `pfsense_haproxy_apply`
 - `pfsense_haproxy_backend`
+- `pfsense_haproxy_backend_acl`
+- `pfsense_haproxy_backend_action`
 - `pfsense_haproxy_backend_server`
 - `pfsense_haproxy_frontend`
 - `pfsense_haproxy_frontend_address`
@@ -386,6 +459,23 @@ resource "pfsense_haproxy_backend_server" "addressvalidator_01" {
   weight       = 10
 }
 
+resource "pfsense_haproxy_backend_acl" "addressvalidator_host" {
+  backend_name = pfsense_haproxy_backend.addressvalidator.name
+  name         = "addressvalidator_host"
+  expression   = "host_matches"
+  value        = "addressvalidator-uat.example.com"
+  position     = 0
+}
+
+resource "pfsense_haproxy_backend_action" "addressvalidator_route" {
+  backend_name = pfsense_haproxy_backend.addressvalidator.name
+  key          = "route_addressvalidator_01"
+  action       = "use_server"
+  acl          = pfsense_haproxy_backend_acl.addressvalidator_host.name
+  server       = pfsense_haproxy_backend_server.addressvalidator_01.name
+  position     = 0
+}
+
 resource "pfsense_haproxy_frontend" "addressvalidator" {
   name               = "addressvalidator_uat_http"
   type               = "http"
@@ -414,6 +504,8 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
   depends_on = [
     pfsense_haproxy_backend.addressvalidator,
     pfsense_haproxy_backend_server.addressvalidator_01,
+    pfsense_haproxy_backend_acl.addressvalidator_host,
+    pfsense_haproxy_backend_action.addressvalidator_route,
     pfsense_haproxy_frontend.addressvalidator,
     pfsense_haproxy_frontend_address.addressvalidator_https,
     pfsense_haproxy_frontend_certificate.addressvalidator_https,
@@ -436,6 +528,23 @@ resource "pfsense_haproxy_apply" "addressvalidator" {
         weight          = pfsense_haproxy_backend_server.addressvalidator_01.weight
         ssl             = pfsense_haproxy_backend_server.addressvalidator_01.ssl
         sslserververify = pfsense_haproxy_backend_server.addressvalidator_01.sslserververify
+      }
+    }))
+    backend_acls = sha1(jsonencode({
+      host = {
+        name       = pfsense_haproxy_backend_acl.addressvalidator_host.name
+        expression = pfsense_haproxy_backend_acl.addressvalidator_host.expression
+        value      = pfsense_haproxy_backend_acl.addressvalidator_host.value
+        position   = pfsense_haproxy_backend_acl.addressvalidator_host.position
+      }
+    }))
+    backend_actions = sha1(jsonencode({
+      route = {
+        key      = pfsense_haproxy_backend_action.addressvalidator_route.key
+        action   = pfsense_haproxy_backend_action.addressvalidator_route.action
+        acl      = pfsense_haproxy_backend_action.addressvalidator_route.acl
+        server   = pfsense_haproxy_backend_action.addressvalidator_route.server
+        position = pfsense_haproxy_backend_action.addressvalidator_route.position
       }
     }))
     frontend = sha1(jsonencode({

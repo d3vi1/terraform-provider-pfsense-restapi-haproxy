@@ -20,10 +20,10 @@ published documentation.
 | Path | Methods | Type | Model | Required package | UAT |
 |------|---------|------|-------|------------------|-----|
 | `/api/v2/services/haproxy/apply` | GET, POST | Singular | HAProxyApply | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/acl` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendACL | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/acls` | GET, DELETE | Plural | HAProxyBackendACL | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/action` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendAction | pfSense-pkg-haproxy | Pending |
-| `/api/v2/services/haproxy/backend/actions` | GET, DELETE | Plural | HAProxyBackendAction | pfSense-pkg-haproxy | Pending |
+| `/api/v2/services/haproxy/backend/acl` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendACL | pfSense-pkg-haproxy | Implemented in M5-01; UAT pending |
+| `/api/v2/services/haproxy/backend/acls` | GET, DELETE | Plural | HAProxyBackendACL | pfSense-pkg-haproxy | Implemented in M5-01; UAT pending |
+| `/api/v2/services/haproxy/backend/action` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendAction | pfSense-pkg-haproxy | Implemented in M5-01; UAT pending |
+| `/api/v2/services/haproxy/backend/actions` | GET, DELETE | Plural | HAProxyBackendAction | pfSense-pkg-haproxy | Implemented in M5-01; UAT pending |
 | `/api/v2/services/haproxy/backend` | GET, POST, PATCH, DELETE | Singular | HAProxyBackend | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/backend/error_file` | GET, POST, PATCH, DELETE | Singular | HAProxyBackendErrorFile | pfSense-pkg-haproxy | Pending |
 | `/api/v2/services/haproxy/backend/errorfiles` | GET, DELETE | Plural | HAProxyBackendErrorFile | pfSense-pkg-haproxy | Pending |
