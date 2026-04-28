@@ -306,7 +306,7 @@ func haproxyFrontendResourceSchemaAttributes() map[string]resourceschema.Attribu
 		},
 		"name": resourceschema.StringAttribute{
 			Required:    true,
-			Description: "Unique HAProxy frontend name. Names must contain at least two letters, numbers, dots, hyphens, or underscores. Terraform treats this as the natural key and requires replacement if it changes.",
+			Description: "Unique HAProxy frontend name. Names may contain letters, numbers, dots, hyphens, or underscores. Terraform treats this as the natural key and requires replacement if it changes.",
 			PlanModifiers: []planmodifier.String{
 				stringplanmodifier.RequiresReplace(),
 			},
@@ -388,7 +388,7 @@ func validateHaproxyFrontendOptionalFields(model haproxyFrontendModel, frontendT
 	if !model.ClientTimeout.IsNull() && !model.ClientTimeout.IsUnknown() && model.ClientTimeout.ValueInt64() < 0 {
 		return fmt.Errorf("client_timeout must be non-negative")
 	}
-	if !model.ForwardFor.IsNull() && !model.ForwardFor.IsUnknown() && model.ForwardFor.ValueBool() && frontendType != "http" {
+	if !model.ForwardFor.IsNull() && !model.ForwardFor.IsUnknown() && frontendType != "http" {
 		return fmt.Errorf("forwardfor is only valid when type is http")
 	}
 
@@ -469,12 +469,19 @@ func buildHaproxyFrontendPatch(plan haproxyFrontendModel, prior haproxyFrontendM
 	if !plan.Type.IsUnknown() && !plan.Type.Equal(prior.Type) {
 		patch["type"] = plan.Type.ValueString()
 	}
+	clearHTTPOnlyFields := !plan.Type.IsNull() && !plan.Type.IsUnknown() &&
+		plan.Type.ValueString() == "tcp" &&
+		!prior.Type.IsNull() && !prior.Type.IsUnknown() &&
+		prior.Type.ValueString() == "http"
 
 	planValues := plan.attrValues()
 	priorValues := prior.attrValues()
 	for _, attribute := range haproxyFrontendAttributes {
 		planned := planValues[attribute.Name]
 		if planned.IsUnknown() {
+			if clearHTTPOnlyFields && haproxyFrontendAttributeHTTPOnly(attribute.Name) && !priorValues[attribute.Name].IsNull() && !priorValues[attribute.Name].IsUnknown() {
+				patch[attribute.JSONName] = nil
+			}
 			continue
 		}
 		if planned.Equal(priorValues[attribute.Name]) {
@@ -485,6 +492,15 @@ func buildHaproxyFrontendPatch(plan haproxyFrontendModel, prior haproxyFrontendM
 	}
 
 	return patch
+}
+
+func haproxyFrontendAttributeHTTPOnly(name string) bool {
+	switch name {
+	case "forwardfor", "httpclose":
+		return true
+	default:
+		return false
+	}
 }
 
 func findHaproxyFrontendByName(ctx context.Context, client *pfsense.Client, name string) (haproxyFrontendModel, string, bool, error) {
