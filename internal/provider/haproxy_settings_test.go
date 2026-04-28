@@ -99,21 +99,21 @@ func TestImplementedResourcesHaveImportCoverage(t *testing.T) {
 	}
 	readmeText := string(readme)
 
-	expectedImportableResources := []string{
-		"pfsense_haproxy_apply",
-		"pfsense_haproxy_backend",
-		"pfsense_haproxy_backend_acl",
-		"pfsense_haproxy_backend_action",
-		"pfsense_haproxy_backend_server",
-		"pfsense_haproxy_frontend",
-		"pfsense_haproxy_frontend_acl",
-		"pfsense_haproxy_frontend_action",
-		"pfsense_haproxy_frontend_address",
-		"pfsense_haproxy_frontend_certificate",
-		"pfsense_haproxy_settings",
+	expectedImportExamples := map[string]string{
+		"pfsense_haproxy_apply":                "terraform import pfsense_haproxy_apply.global apply",
+		"pfsense_haproxy_backend":              "terraform import pfsense_haproxy_backend.app app_backend",
+		"pfsense_haproxy_backend_acl":          "terraform import pfsense_haproxy_backend_acl.host app_backend/host_acl",
+		"pfsense_haproxy_backend_action":       "terraform import pfsense_haproxy_backend_action.route app_backend/route_app01",
+		"pfsense_haproxy_backend_server":       "terraform import pfsense_haproxy_backend_server.app app_backend/app01",
+		"pfsense_haproxy_frontend":             "terraform import pfsense_haproxy_frontend.app app_frontend",
+		"pfsense_haproxy_frontend_acl":         "terraform import pfsense_haproxy_frontend_acl.host app_frontend/host_acl",
+		"pfsense_haproxy_frontend_action":      "terraform import pfsense_haproxy_frontend_action.route app_frontend/route_app",
+		"pfsense_haproxy_frontend_address":     "terraform import pfsense_haproxy_frontend_address.app app_frontend/any_ipv4/-/443",
+		"pfsense_haproxy_frontend_certificate": "terraform import pfsense_haproxy_frontend_certificate.app app_frontend/existing_cert_ref",
+		"pfsense_haproxy_settings":             "terraform import pfsense_haproxy_settings.global settings",
 	}
 
-	for _, typeName := range expectedImportableResources {
+	for typeName, importExample := range expectedImportExamples {
 		res, ok := resourceByType[typeName]
 		if !ok {
 			t.Fatalf("%s resource was not registered", typeName)
@@ -121,8 +121,8 @@ func TestImplementedResourcesHaveImportCoverage(t *testing.T) {
 		if _, ok := res.(resource.ResourceWithImportState); !ok {
 			t.Fatalf("%s does not implement ResourceWithImportState", typeName)
 		}
-		if !strings.Contains(readmeText, "terraform import "+typeName+".") {
-			t.Fatalf("README.md does not document terraform import syntax for %s", typeName)
+		if !strings.Contains(readmeText, importExample) {
+			t.Fatalf("README.md does not document expected import example for %s: %s", typeName, importExample)
 		}
 		delete(resourceByType, typeName)
 	}
