@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -188,6 +192,207 @@ func TestHTTPMethodHelpers(t *testing.T) {
 				t.Fatalf("response not decoded")
 			}
 		})
+	}
+}
+
+func TestConcurrentMutatingRequestsSerialize(t *testing.T) {
+	methods := []string{
+		http.MethodPost,
+		http.MethodPatch,
+		http.MethodPut,
+		http.MethodDelete,
+	}
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+
+	var active atomic.Int32
+	var seen atomic.Int32
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if !isConfigMutationMethod(req.Method) {
+			return nil, fmt.Errorf("unexpected non-mutating method %s", req.Method)
+		}
+		if !configWriteGuardHeld() {
+			return nil, fmt.Errorf("%s reached transport without holding the shared write guard", req.Method)
+		}
+
+		current := active.Add(1)
+		defer active.Add(-1)
+		if current != 1 {
+			return nil, fmt.Errorf("%s overlapped with another mutating request", req.Method)
+		}
+
+		seen.Add(1)
+		return testJSONResponse(req, `{"ok":true}`), nil
+	})
+
+	start := make(chan struct{})
+	errs := make(chan error, len(methods))
+	var wg sync.WaitGroup
+	for _, method := range methods {
+		method := method
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			var response struct {
+				OK bool `json:"ok"`
+			}
+			var request any
+			if method != http.MethodDelete {
+				request = map[string]string{"method": method}
+			}
+			if err := client.Do(context.Background(), method, "/haproxy/test", request, &response); err != nil {
+				errs <- err
+				return
+			}
+			if !response.OK {
+				errs <- fmt.Errorf("%s response not decoded", method)
+				return
+			}
+			errs <- nil
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := seen.Load(); got != 4 {
+		t.Fatalf("mutating requests sent = %d, want %d", got, len(methods))
+	}
+}
+
+func TestGetDoesNotWaitForActiveWrite(t *testing.T) {
+	writeEntered := make(chan struct{})
+	releaseWrite := make(chan struct{})
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseWrite)
+		})
+	}
+	defer release()
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.Method {
+		case http.MethodPost:
+			close(writeEntered)
+			<-releaseWrite
+		case http.MethodGet:
+			if !configWriteGuardHeld() {
+				return nil, errors.New("GET reached transport after the active write guard was released")
+			}
+		default:
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+
+		return testJSONResponse(req, `{"ok":true}`), nil
+	})
+
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-a"}, nil)
+	}()
+	waitForSignal(t, writeEntered, "write request to enter transport")
+
+	getDone := make(chan error, 1)
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	go func() {
+		getDone <- client.Get(context.Background(), "/haproxy/test", &response)
+	}()
+
+	select {
+	case err := <-getDone:
+		if err != nil {
+			t.Fatalf("Get returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("GET was serialized behind an active write")
+	}
+	if !response.OK {
+		t.Fatalf("response not decoded")
+	}
+
+	release()
+	if err := <-writeDone; err != nil {
+		t.Fatalf("Post returned error: %v", err)
+	}
+}
+
+func TestWaitingMutatingRequestHonorsContextCancellation(t *testing.T) {
+	writeEntered := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	secondWriteReachedTransport := make(chan struct{}, 1)
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseWrite)
+		})
+	}
+	defer release()
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost {
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+
+		select {
+		case writeEntered <- struct{}{}:
+			<-releaseWrite
+		default:
+			secondWriteReachedTransport <- struct{}{}
+			return testJSONResponse(req, `{"ok":true}`), nil
+		}
+
+		return testJSONResponse(req, `{"ok":true}`), nil
+	})
+
+	firstWriteDone := make(chan error, 1)
+	go func() {
+		firstWriteDone <- client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-a"}, nil)
+	}()
+	waitForSignal(t, writeEntered, "first write request to enter transport")
+
+	waitingCtx, cancel := context.WithCancel(context.Background())
+	secondWriteDone := make(chan error, 1)
+	go func() {
+		secondWriteDone <- client.Post(waitingCtx, "/haproxy/test", map[string]string{"name": "backend-b"}, nil)
+	}()
+	cancel()
+
+	select {
+	case err := <-secondWriteDone:
+		if err == nil {
+			t.Fatal("second write returned nil error after context cancellation")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("second write error = %v, want context.Canceled", err)
+		}
+	case <-secondWriteReachedTransport:
+		t.Fatal("canceled waiting write reached transport")
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled waiting write did not return promptly")
+	}
+
+	release()
+	if err := <-firstWriteDone; err != nil {
+		t.Fatalf("first Post returned error: %v", err)
+	}
+
+	if err := client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-c"}, nil); err != nil {
+		t.Fatalf("later Post returned error after cancellation: %v", err)
 	}
 }
 
@@ -469,5 +674,35 @@ func TestTimeoutFromConfig(t *testing.T) {
 
 	if client.httpClient.Timeout != 5*time.Second {
 		t.Fatalf("timeout = %s", client.httpClient.Timeout)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func configWriteGuardHeld() bool {
+	return len(configWriteGuard) > 0
+}
+
+func testJSONResponse(req *http.Request, body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}
+}
+
+func waitForSignal(t *testing.T, ch <-chan struct{}, description string) {
+	t.Helper()
+
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
 	}
 }

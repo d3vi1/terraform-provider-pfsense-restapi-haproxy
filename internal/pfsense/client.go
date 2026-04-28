@@ -17,6 +17,9 @@ import (
 
 const apiPathPrefix = "/api/v2"
 
+// configWriteGuard serializes pfSense config mutations within one provider process.
+var configWriteGuard = make(chan struct{}, 1)
+
 // Config contains connection settings for pfSense-pkg-RESTAPI.
 type Config struct {
 	Endpoint    string
@@ -149,50 +152,52 @@ func (c *Client) Do(ctx context.Context, method string, path string, in any, out
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s request failed: %w", method, displayPath, err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode > 299 {
-		return newAPIError(resp, method, displayPath)
-	}
-
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read %s %s response: %w", method, displayPath, err)
-	}
-	if len(bytes.TrimSpace(responseBody)) == 0 {
-		return nil
-	}
-
-	if envelope, ok := parseEnvelope(responseBody); ok {
-		if envelope.Code >= 400 {
-			return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope)
+	return withConfigWriteGuard(ctx, method, func() error {
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("%s %s request failed: %w", method, displayPath, err)
 		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode > 299 {
+			return newAPIError(resp, method, displayPath)
+		}
+
+		responseBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read %s %s response: %w", method, displayPath, err)
+		}
+		if len(bytes.TrimSpace(responseBody)) == 0 {
+			return nil
+		}
+
+		if envelope, ok := parseEnvelope(responseBody); ok {
+			if envelope.Code >= 400 {
+				return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope)
+			}
+			if out == nil {
+				return nil
+			}
+			if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+				return nil
+			}
+			if err := json.Unmarshal(envelope.Data, out); err != nil {
+				return fmt.Errorf("decode %s %s response data: %w", method, displayPath, err)
+			}
+			return nil
+		}
+
 		if out == nil {
 			return nil
 		}
-		if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
-			return nil
+		if err := json.Unmarshal(responseBody, out); err != nil {
+			return fmt.Errorf("decode %s %s response: %w", method, displayPath, err)
 		}
-		if err := json.Unmarshal(envelope.Data, out); err != nil {
-			return fmt.Errorf("decode %s %s response data: %w", method, displayPath, err)
-		}
-		return nil
-	}
 
-	if out == nil {
 		return nil
-	}
-	if err := json.Unmarshal(responseBody, out); err != nil {
-		return fmt.Errorf("decode %s %s response: %w", method, displayPath, err)
-	}
-
-	return nil
+	})
 }
 
 func (c *Client) setAuth(req *http.Request) {
@@ -202,6 +207,32 @@ func (c *Client) setAuth(req *http.Request) {
 	}
 	if c.username != "" || c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
+	}
+}
+
+func withConfigWriteGuard(ctx context.Context, method string, run func() error) error {
+	if !isConfigMutationMethod(method) {
+		return run()
+	}
+
+	select {
+	case configWriteGuard <- struct{}{}:
+		defer func() {
+			<-configWriteGuard
+		}()
+	case <-ctx.Done():
+		return fmt.Errorf("%s request canceled while waiting for pfSense config write guard: %w", method, ctx.Err())
+	}
+
+	return run()
+}
+
+func isConfigMutationMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+		return true
+	default:
+		return false
 	}
 }
 
