@@ -9,6 +9,8 @@ import (
 
 	"github.com/d3vi1/terraform-provider-pfsense-restapi-haproxy/internal/pfsense"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	datasourceschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -22,9 +24,11 @@ const (
 )
 
 var (
-	_ resource.Resource                = (*haproxyBackendServerResource)(nil)
-	_ resource.ResourceWithConfigure   = (*haproxyBackendServerResource)(nil)
-	_ resource.ResourceWithImportState = (*haproxyBackendServerResource)(nil)
+	_ datasource.DataSource              = (*haproxyBackendServerDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*haproxyBackendServerDataSource)(nil)
+	_ resource.Resource                  = (*haproxyBackendServerResource)(nil)
+	_ resource.ResourceWithConfigure     = (*haproxyBackendServerResource)(nil)
+	_ resource.ResourceWithImportState   = (*haproxyBackendServerResource)(nil)
 
 	haproxyNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
@@ -57,6 +61,10 @@ type haproxyBackendServerResource struct {
 	client *pfsense.Client
 }
 
+type haproxyBackendServerDataSource struct {
+	client *pfsense.Client
+}
+
 type haproxyBackendServerModel struct {
 	ID              types.String `tfsdk:"id"`
 	BackendName     types.String `tfsdk:"backend_name"`
@@ -70,8 +78,89 @@ type haproxyBackendServerModel struct {
 	ServerID        types.Int64  `tfsdk:"serverid"`
 }
 
+func newHaproxyBackendServerDataSource() datasource.DataSource {
+	return &haproxyBackendServerDataSource{}
+}
+
 func newHaproxyBackendServerResource() resource.Resource {
 	return &haproxyBackendServerResource{}
+}
+
+func (d *haproxyBackendServerDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = "pfsense_haproxy_backend_server"
+}
+
+func (d *haproxyBackendServerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = datasourceschema.Schema{
+		Description: "Looks up a pfSense HAProxy backend server by exact parent backend name and server name without exposing pfSense's transient REST child object ID.",
+		Attributes:  haproxyBackendServerDataSourceSchemaAttributes(),
+	}
+}
+
+func (d *haproxyBackendServerDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(*pfsense.Client)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected data source configure type", fmt.Sprintf("Expected *pfsense.Client, got %T.", req.ProviderData))
+		return
+	}
+
+	d.client = client
+}
+
+func (d *haproxyBackendServerDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	if d.client == nil {
+		resp.Diagnostics.AddError("Missing pfSense client", "The provider was not configured before reading pfsense_haproxy_backend_server.")
+		return
+	}
+
+	var config haproxyBackendServerModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	backendName, err := haproxyBackendServerBackendName(config.BackendName)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid HAProxy backend server lookup", err.Error())
+		return
+	}
+	name, err := haproxyBackendServerName(config.Name)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid HAProxy backend server lookup", err.Error())
+		return
+	}
+
+	_, parentID, found, err := findHaproxyBackendByName(ctx, d.client, backendName)
+	if err != nil {
+		resp.Diagnostics.AddError("Find parent HAProxy backend failed", backendServerParentLookupErrorDetail(backendName, name, err))
+		return
+	}
+	if !found {
+		resp.Diagnostics.AddError(
+			"HAProxy backend not found",
+			fmt.Sprintf("No parent pfSense HAProxy backend named %q was returned by GET %s.", backendName, haproxyBackendsPath),
+		)
+		return
+	}
+
+	server, _, found, err := lookupHaproxyBackendServerByName(ctx, d.client, parentID, backendName, name, false)
+	if err != nil {
+		resp.Diagnostics.AddError("Read HAProxy backend server failed", backendServerDataSourceLookupErrorDetail(backendName, name, err))
+		return
+	}
+	if !found {
+		resp.Diagnostics.AddError(
+			"HAProxy backend server not found",
+			fmt.Sprintf("No pfSense HAProxy backend server named %q was returned under backend %q by GET %s.", name, backendName, haproxyBackendServersPath),
+		)
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, server)...)
 }
 
 func (r *haproxyBackendServerResource) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -331,6 +420,51 @@ func (r *haproxyBackendServerResource) ImportState(ctx context.Context, req reso
 	resp.Diagnostics.Append(resp.State.Set(ctx, model)...)
 }
 
+func haproxyBackendServerDataSourceSchemaAttributes() map[string]datasourceschema.Attribute {
+	return map[string]datasourceschema.Attribute{
+		"id": datasourceschema.StringAttribute{
+			Computed:    true,
+			Description: "Stable Terraform ID for the backend server in backend_name/name form. This is not the pfSense object ID.",
+		},
+		"backend_name": datasourceschema.StringAttribute{
+			Required:    true,
+			Description: "Name of the parent pfsense_haproxy_backend to look up. The parent is resolved by exact name so its current pfSense object ID can be used only for the child query.",
+		},
+		"name": datasourceschema.StringAttribute{
+			Required:    true,
+			Description: "Unique HAProxy backend server name within the parent backend. The data source requires an exact server name match.",
+		},
+		"address": datasourceschema.StringAttribute{
+			Computed:    true,
+			Description: "Hostname or IP address for this backend server. Hostnames are resolved by HAProxy at service startup.",
+		},
+		"port": datasourceschema.Int64Attribute{
+			Computed:    true,
+			Description: "TCP port to forward to on this backend server.",
+		},
+		"status": datasourceschema.StringAttribute{
+			Computed:    true,
+			Description: "Eligibility status for this backend server: active, backup, disabled, or inactive.",
+		},
+		"weight": datasourceschema.Int64Attribute{
+			Computed:    true,
+			Description: "Load-balancing weight for this backend server. pfREST accepts values from 0 through 256.",
+		},
+		"ssl": datasourceschema.BoolAttribute{
+			Computed:    true,
+			Description: "Use SSL/TLS when forwarding to this backend server.",
+		},
+		"sslserververify": datasourceschema.BoolAttribute{
+			Computed:    true,
+			Description: "Verify the backend server SSL/TLS certificate when forwarding with SSL/TLS.",
+		},
+		"serverid": datasourceschema.Int64Attribute{
+			Computed:    true,
+			Description: "Read-only HAProxy backend server ID assigned by pfSense for internal use.",
+		},
+	}
+}
+
 func haproxyBackendServerResourceSchemaAttributes() map[string]resourceschema.Attribute {
 	return map[string]resourceschema.Attribute{
 		"id": resourceschema.StringAttribute{
@@ -444,9 +578,6 @@ func haproxyBackendServerBackendName(value types.String) (string, error) {
 	name, err := haproxyBackendName(value)
 	if err != nil {
 		return "", fmt.Errorf("backend_name %s", err.Error())
-	}
-	if !haproxyNamePattern.MatchString(name) {
-		return "", fmt.Errorf("backend_name may contain only letters, numbers, dot, hyphen, and underscore")
 	}
 
 	return name, nil
@@ -587,6 +718,10 @@ func buildHaproxyBackendServerPatch(plan haproxyBackendServerModel, prior haprox
 }
 
 func findHaproxyBackendServerByName(ctx context.Context, client *pfsense.Client, parentID string, backendName string, name string) (haproxyBackendServerModel, string, bool, error) {
+	return lookupHaproxyBackendServerByName(ctx, client, parentID, backendName, name, true)
+}
+
+func lookupHaproxyBackendServerByName(ctx context.Context, client *pfsense.Client, parentID string, backendName string, name string, requireAPIID bool) (haproxyBackendServerModel, string, bool, error) {
 	var raw any
 	if err := client.Get(ctx, haproxyBackendServersQueryPath(parentID, name), &raw); err != nil {
 		return haproxyBackendServerModel{}, "", false, err
@@ -616,9 +751,13 @@ func findHaproxyBackendServerByName(ctx context.Context, client *pfsense.Client,
 		return haproxyBackendServerModel{}, "", false, nil
 	}
 
-	apiID, err := apiRequiredScalarStringWithLabel(matched, "HAProxy backend server", "id")
-	if err != nil {
-		return haproxyBackendServerModel{}, "", false, fmt.Errorf("%w; confirm UAT returns child object IDs from GET %s before using update/delete", err, haproxyBackendServersPath)
+	apiID := ""
+	if requireAPIID {
+		var err error
+		apiID, err = apiRequiredScalarStringWithLabel(matched, "HAProxy backend server", "id")
+		if err != nil {
+			return haproxyBackendServerModel{}, "", false, fmt.Errorf("%w; confirm UAT returns child object IDs from GET %s before using update/delete", err, haproxyBackendServersPath)
+		}
 	}
 	model, err := haproxyBackendServerModelFromAPI(matched, backendName)
 	if err != nil {
@@ -769,4 +908,12 @@ func haproxyBackendServerTerraformID(backendName string, name string) string {
 
 func backendServerLookupErrorDetail(backendName string, name string, err error) string {
 	return fmt.Sprintf("%s. Confirm GET %s is available on UAT, accepts parent_id/name query filters, returns server objects with stable name fields, and includes the transient pfSense child object id required for update/delete. Backend name: %q. Server name: %q.", err.Error(), haproxyBackendServersPath, backendName, name)
+}
+
+func backendServerDataSourceLookupErrorDetail(backendName string, name string, err error) string {
+	return fmt.Sprintf("%s. Confirm GET %s is available on UAT, accepts parent_id/name query filters, and returns server objects with stable name fields. Backend name: %q. Server name: %q.", err.Error(), haproxyBackendServersPath, backendName, name)
+}
+
+func backendServerParentLookupErrorDetail(backendName string, name string, err error) string {
+	return fmt.Sprintf("%s. Confirm GET %s is available on UAT, returns one backend object with a stable name field, and includes the transient pfSense backend object id required to query child servers. Backend name: %q. Server name: %q.", err.Error(), haproxyBackendsPath, backendName, name)
 }

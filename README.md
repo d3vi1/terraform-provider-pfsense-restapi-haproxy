@@ -8,8 +8,10 @@ Bootstrap scaffold is in place. `pfsense_haproxy_settings` is implemented with
 an import-first ownership model, `pfsense_haproxy_apply` provides an explicit
 apply/reload lifecycle, `pfsense_haproxy_backend` manages top-level HAProxy
 backends by natural name, and `pfsense_haproxy_backend_server` manages backend
-server children by parent/backend name and server name. Additional HAProxy
-resources are tracked through GitHub issues and milestones.
+server children by parent/backend name and server name. Backend and backend
+server lookup data sources are available for read-only references to existing
+HAProxy objects. Additional HAProxy resources are tracked through GitHub issues
+and milestones.
 
 ## Requirements
 
@@ -155,6 +157,11 @@ UAT validation is still pending. The implementation assumes
 `HAProxyBackend` scalar field names, and backend writes do not apply pending
 HAProxy changes unless a separate `pfsense_haproxy_apply` resource is used.
 
+`data "pfsense_haproxy_backend"` looks up an existing backend by exact name. It
+returns the same conservative scalar fields as the resource and uses the backend
+name as `id`; pfSense REST object IDs are not exposed. Missing or duplicate
+matches return diagnostics. Data sources are lookup-only and cannot be imported.
+
 ## HAProxy backend servers
 
 `resource "pfsense_haproxy_backend_server"` manages backend server children:
@@ -188,6 +195,13 @@ use the documented child `parent_id` contract; and backend server writes only
 mark HAProxy configuration pending until a separate `pfsense_haproxy_apply`
 resource is used.
 
+`data "pfsense_haproxy_backend_server"` looks up an existing backend server by
+`backend_name` and server `name`. It first resolves the parent backend by name,
+then queries child servers under the current parent ID. The returned `id` is the
+stable `backend_name/server_name` natural key; transient pfSense parent/child
+REST IDs are not exposed. Missing parent, missing child, or duplicate child
+matches return diagnostics. Data sources are lookup-only and cannot be imported.
+
 ## Development
 
 ```bash
@@ -199,6 +213,13 @@ make testacc
 `make testacc` requires real pfSense credentials and must be run only against an approved test target unless the issue explicitly targets production.
 
 ## Resources
+
+- `pfsense_haproxy_apply`
+- `pfsense_haproxy_backend`
+- `pfsense_haproxy_backend_server`
+- `pfsense_haproxy_settings`
+
+## Data Sources
 
 - `pfsense_haproxy_apply`
 - `pfsense_haproxy_backend`

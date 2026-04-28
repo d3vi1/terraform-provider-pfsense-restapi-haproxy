@@ -531,6 +531,28 @@ func TestHaproxyBackendServerResourceImportUsesBackendAndServerNaturalNames(t *t
 	}
 }
 
+func TestHaproxyBackendServerBackendNameMatchesBackendResourceValidation(t *testing.T) {
+	t.Parallel()
+
+	backendName, err := haproxyBackendServerBackendName(types.StringValue("app backend:blue"))
+	if err != nil {
+		t.Fatalf("backend_name should allow names accepted by pfsense_haproxy_backend: %v", err)
+	}
+	if backendName != "app backend:blue" {
+		t.Fatalf("backend_name = %q", backendName)
+	}
+
+	_, err = haproxyBackendName(types.StringValue("app/backend"))
+	if err == nil {
+		t.Fatalf("backend resource name should reject / because child IDs use it as a separator")
+	}
+
+	_, err = haproxyBackendServerName(types.StringValue("app server:blue"))
+	if err == nil {
+		t.Fatalf("server name should still reject characters outside the server-name subset")
+	}
+}
+
 func TestHaproxyBackendServerSchemaIsConservative(t *testing.T) {
 	schema := haproxyBackendServerResourceSchema(t)
 	for _, required := range []string{"backend_name", "name", "address", "port"} {
