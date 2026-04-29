@@ -703,6 +703,9 @@ HAProxy endpoint inventory and provisional resource schema decisions are tracked
 under `docs/schema/`. M6 issue #18 UAT closeout evidence, including the
 acceptance runbook and endpoint response shape ledger, is tracked in
 [`docs/schema/m6-uat-acceptance-evidence.md`](docs/schema/m6-uat-acceptance-evidence.md).
+M6 issue #19 production read-only validation workflow and evidence format are
+tracked in
+[`docs/schema/m6-prod-readonly-validation.md`](docs/schema/m6-prod-readonly-validation.md).
 Live schema captures must be generated with:
 
 ```bash

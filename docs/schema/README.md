@@ -77,6 +77,11 @@ endpoint response shape evidence ledger are tracked in
 is a template for the approved UAT run and does not claim live UAT execution
 from this environment.
 
+M6 issue #19 production read-only validation workflow, safety contract, and
+evidence format are tracked in
+[`m6-prod-readonly-validation.md`](m6-prod-readonly-validation.md). That lane
+uses only GET requests and explicitly forbids production apply/write steps.
+
 For M2-01, `pfsense_haproxy_settings` uses the upstream
 `HAProxySettings.inc` scalar model as a conservative implementation reference:
 Terraform manages only scalar fields, treats `advanced` as sensitive, and does

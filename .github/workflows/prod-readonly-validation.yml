@@ -1,0 +1,73 @@
+name: prod-readonly-validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type READ_ONLY_PROD_VALIDATION to run GET-only PROD discovery"
+        required: true
+        type: string
+
+jobs:
+  prod-readonly-validation:
+    if: ${{ github.repository_owner == 'd3vi1' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: production-readonly
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: read-only safety precheck
+        env:
+          PFSENSE_ENDPOINT: ${{ secrets.PFSENSE_PROD_ENDPOINT }}
+          PFSENSE_API_KEY: ${{ secrets.PFSENSE_PROD_API_KEY }}
+          PFSENSE_USERNAME: ${{ secrets.PFSENSE_PROD_USERNAME }}
+          PFSENSE_PASSWORD: ${{ secrets.PFSENSE_PROD_PASSWORD }}
+          PFSENSE_VALIDATION_ENVIRONMENT: prod
+          PFSENSE_READONLY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::prod read-only validation must run from main"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "::error::checked out code must match origin/main"
+            exit 1
+          fi
+          if [ "${PFSENSE_READONLY_CONFIRMATION}" != "READ_ONLY_PROD_VALIDATION" ]; then
+            echo "::error::confirmation must be READ_ONLY_PROD_VALIDATION"
+            exit 1
+          fi
+          if [ "${PFSENSE_VALIDATION_ENVIRONMENT}" != "prod" ]; then
+            echo "::error::PFSENSE_VALIDATION_ENVIRONMENT must be prod"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_ENDPOINT}" ]; then
+            echo "::error::PFSENSE_PROD_ENDPOINT secret is required"
+            exit 1
+          fi
+          if [ -z "${PFSENSE_API_KEY}" ] && { [ -z "${PFSENSE_USERNAME}" ] || [ -z "${PFSENSE_PASSWORD}" ]; }; then
+            echo "::error::PFSENSE_PROD_API_KEY or PFSENSE_PROD_USERNAME/PFSENSE_PROD_PASSWORD is required"
+            exit 1
+          fi
+      - name: GET-only HAProxy discovery
+        env:
+          PFSENSE_ENDPOINT: ${{ secrets.PFSENSE_PROD_ENDPOINT }}
+          PFSENSE_API_KEY: ${{ secrets.PFSENSE_PROD_API_KEY }}
+          PFSENSE_USERNAME: ${{ secrets.PFSENSE_PROD_USERNAME }}
+          PFSENSE_PASSWORD: ${{ secrets.PFSENSE_PROD_PASSWORD }}
+          PFSENSE_INSECURE_TLS: ${{ secrets.PFSENSE_PROD_INSECURE_TLS }}
+          PFSENSE_TIMEOUT: ${{ secrets.PFSENSE_PROD_TIMEOUT }}
+          PFSENSE_VALIDATION_ENVIRONMENT: prod
+          PFSENSE_READONLY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prod_readonly_validate.py --output-dir validation-evidence/prod-readonly
+          echo "PROD read-only validation completed. Evidence remains on the ephemeral runner and is not uploaded from this public repository."
