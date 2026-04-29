@@ -71,6 +71,12 @@ No live UAT fixture is committed for this issue. The endpoint inventory and
 resource decisions in this directory are based on primary pfREST documentation
 and are marked pending UAT confirmation.
 
+M6 issue #18 closeout runbook, cleanup contract, #42-#48 traceability, and the
+endpoint response shape evidence ledger are tracked in
+[`m6-uat-acceptance-evidence.md`](m6-uat-acceptance-evidence.md). That document
+is a template for the approved UAT run and does not claim live UAT execution
+from this environment.
+
 For M2-01, `pfsense_haproxy_settings` uses the upstream
 `HAProxySettings.inc` scalar model as a conservative implementation reference:
 Terraform manages only scalar fields, treats `advanced` as sensitive, and does
