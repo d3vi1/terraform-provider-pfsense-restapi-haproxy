@@ -33,6 +33,7 @@ docs/fixtures/raw/
 docs/schema/**/*.raw.json
 docs/fixtures/**/*.raw.json
 *.unredacted.json
+validation-evidence/
 
 # Editor/OS
 .DS_Store

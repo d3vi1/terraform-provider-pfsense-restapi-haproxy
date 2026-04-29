@@ -55,3 +55,15 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: helper script tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest scripts/capture_haproxy_schema_test.py scripts/prod_readonly_validate_test.py
