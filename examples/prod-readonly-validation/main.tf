@@ -7,6 +7,7 @@ terraform {
 }
 
 provider "pfsense" {
+  alias        = "prod"
   endpoint     = var.pfsense_endpoint
   api_key      = var.pfsense_api_key
   username     = var.pfsense_username
@@ -59,16 +60,24 @@ variable "existing_backend_server_name" {
   default     = null
 }
 
-data "pfsense_haproxy_settings" "current" {}
+data "pfsense_haproxy_settings" "current" {
+  provider = pfsense.prod
+}
 
-data "pfsense_haproxy_apply" "status" {}
+data "pfsense_haproxy_apply" "status" {
+  provider = pfsense.prod
+}
 
 data "pfsense_haproxy_backend" "existing" {
+  provider = pfsense.prod
+
   count = var.existing_backend_name == null ? 0 : 1
   name  = var.existing_backend_name
 }
 
 data "pfsense_haproxy_backend_server" "existing" {
+  provider = pfsense.prod
+
   count = var.existing_backend_name == null || var.existing_backend_server_name == null ? 0 : 1
 
   backend_name = var.existing_backend_name
