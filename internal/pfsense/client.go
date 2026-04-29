@@ -8,14 +8,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	pathpkg "path"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const apiPathPrefix = "/api/v2"
+
+const (
+	maxSafeReadRetries = 1
+	defaultRetryDelay  = 100 * time.Millisecond
+	maxRetryDelay      = 2 * time.Second
+)
 
 // configWriteGuard serializes pfSense config mutations within one provider process.
 var configWriteGuard = make(chan struct{}, 1)
@@ -48,6 +56,50 @@ type APIError struct {
 	ResponseID string
 	Message    string
 	Body       string
+	RetryAfter string
+}
+
+type failureClass string
+
+const (
+	failureClassPermanent    failureClass = "permanent"
+	failureClassTransient    failureClass = "transient"
+	failureClassUnclassified failureClass = "unclassified"
+)
+
+type classifiedRequestError struct {
+	err            error
+	class          failureClass
+	method         string
+	path           string
+	retryAttempted bool
+	retryable      bool
+}
+
+func (e *classifiedRequestError) Error() string {
+	message := e.err.Error()
+	switch e.class {
+	case failureClassTransient:
+		message += ". Classified as transient"
+	case failureClassPermanent:
+		message += ". Classified as permanent"
+	default:
+		message += ". Failure class is unclassified"
+	}
+	if e.retryAttempted {
+		message += "; a safe GET retry was attempted"
+	} else if e.retryable {
+		message += "; safe GET retry was available but was not attempted"
+	} else if isConfigMutationMethod(e.method) {
+		message += "; unsafe config write was not retried automatically. Refresh or inspect live pfSense HAProxy state before rerunning Terraform"
+	} else {
+		message += "; request was not retried"
+	}
+	return message
+}
+
+func (e *classifiedRequestError) Unwrap() error {
+	return e.err
 }
 
 func (e *APIError) Error() string {
@@ -133,13 +185,45 @@ func (c *Client) Do(ctx context.Context, method string, path string, in any, out
 		return err
 	}
 
-	var body io.Reader
+	var bodyBytes []byte
 	if in != nil {
 		encoded, err := json.Marshal(in)
 		if err != nil {
 			return fmt.Errorf("encode %s %s request: %w", method, displayPath, err)
 		}
-		body = bytes.NewReader(encoded)
+		bodyBytes = encoded
+	}
+
+	return withConfigWriteGuard(ctx, method, func() error {
+		return c.doWithRetry(ctx, method, requestURL, displayPath, bodyBytes, in != nil, out)
+	})
+}
+
+func (c *Client) doWithRetry(ctx context.Context, method string, requestURL string, displayPath string, bodyBytes []byte, hasBody bool, out any) error {
+	retryAttempted := false
+	for attempt := 0; ; attempt++ {
+		err := c.doOnce(ctx, method, requestURL, displayPath, bodyBytes, hasBody, out)
+		if err == nil {
+			return nil
+		}
+
+		class := classifyFailure(err)
+		if shouldRetryRequest(ctx, method, class, attempt) {
+			if waitErr := waitBeforeRetry(ctx, retryDelay(err)); waitErr != nil {
+				return decorateRequestError(method, displayPath, fmt.Errorf("%w; safe GET retry wait canceled: %w", err, waitErr), class, retryAttempted, false)
+			}
+			retryAttempted = true
+			continue
+		}
+
+		return decorateRequestError(method, displayPath, err, class, retryAttempted, isRetryableRead(method, class))
+	}
+}
+
+func (c *Client) doOnce(ctx context.Context, method string, requestURL string, displayPath string, bodyBytes []byte, hasBody bool, out any) error {
+	var body io.Reader
+	if hasBody {
+		body = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
@@ -147,57 +231,163 @@ func (c *Client) Do(ctx context.Context, method string, path string, in any, out
 		return fmt.Errorf("create %s %s request: %w", method, displayPath, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if in != nil {
+	if hasBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	c.setAuth(req)
 
-	return withConfigWriteGuard(ctx, method, func() error {
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("%s %s request failed: %w", method, displayPath, err)
-		}
-		defer func() {
-			_ = resp.Body.Close()
-		}()
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s %s request failed: %w", method, displayPath, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
-		if resp.StatusCode < http.StatusOK || resp.StatusCode > 299 {
-			return newAPIError(resp, method, displayPath)
-		}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode > 299 {
+		return newAPIError(resp, method, displayPath)
+	}
 
-		responseBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("read %s %s response: %w", method, displayPath, err)
-		}
-		if len(bytes.TrimSpace(responseBody)) == 0 {
-			return nil
-		}
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read %s %s response: %w", method, displayPath, err)
+	}
+	if len(bytes.TrimSpace(responseBody)) == 0 {
+		return nil
+	}
 
-		if envelope, ok := parseEnvelope(responseBody); ok {
-			if envelope.Code >= 400 {
-				return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope)
-			}
-			if out == nil {
-				return nil
-			}
-			if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
-				return nil
-			}
-			if err := json.Unmarshal(envelope.Data, out); err != nil {
-				return fmt.Errorf("decode %s %s response data: %w", method, displayPath, err)
-			}
-			return nil
+	if envelope, ok := parseEnvelope(responseBody); ok {
+		if envelope.Code >= 400 {
+			return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope, resp.Header.Get("Retry-After"))
 		}
-
 		if out == nil {
 			return nil
 		}
-		if err := json.Unmarshal(responseBody, out); err != nil {
-			return fmt.Errorf("decode %s %s response: %w", method, displayPath, err)
+		if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+			return nil
 		}
-
+		if err := json.Unmarshal(envelope.Data, out); err != nil {
+			return fmt.Errorf("decode %s %s response data: %w", method, displayPath, err)
+		}
 		return nil
-	})
+	}
+
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(responseBody, out); err != nil {
+		return fmt.Errorf("decode %s %s response: %w", method, displayPath, err)
+	}
+
+	return nil
+}
+
+func classifyFailure(err error) failureClass {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return classifyStatusCode(apiErr.StatusCode)
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return failureClassTransient
+	}
+	var temporaryErr interface {
+		Temporary() bool
+	}
+	if errors.As(err, &temporaryErr) && temporaryErr.Temporary() {
+		return failureClassTransient
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return failureClassPermanent
+	}
+
+	return failureClassPermanent
+}
+
+func classifyStatusCode(statusCode int) failureClass {
+	switch statusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return failureClassTransient
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
+		return failureClassPermanent
+	default:
+		if statusCode >= 500 {
+			return failureClassTransient
+		}
+		if statusCode >= 400 {
+			return failureClassPermanent
+		}
+		return failureClassUnclassified
+	}
+}
+
+func shouldRetryRequest(ctx context.Context, method string, class failureClass, attempt int) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	return attempt < maxSafeReadRetries && isRetryableRead(method, class)
+}
+
+func isRetryableRead(method string, class failureClass) bool {
+	return strings.EqualFold(method, http.MethodGet) && class == failureClassTransient
+}
+
+func waitBeforeRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func retryDelay(err error) time.Duration {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		if delay := retryAfterDelay(apiErr.RetryAfter); delay > 0 {
+			return delay
+		}
+	}
+	return defaultRetryDelay
+}
+
+func retryAfterDelay(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		return capRetryDelay(time.Duration(seconds) * time.Second)
+	}
+	if retryAt, err := http.ParseTime(raw); err == nil {
+		return capRetryDelay(time.Until(retryAt))
+	}
+	return 0
+}
+
+func capRetryDelay(delay time.Duration) time.Duration {
+	if delay <= 0 {
+		return 0
+	}
+	if delay > maxRetryDelay {
+		return maxRetryDelay
+	}
+	return delay
+}
+
+func decorateRequestError(method string, path string, err error, class failureClass, retryAttempted bool, retryable bool) error {
+	return &classifiedRequestError{
+		err:            err,
+		class:          class,
+		method:         method,
+		path:           path,
+		retryAttempted: retryAttempted,
+		retryable:      retryable,
+	}
 }
 
 func (c *Client) setAuth(req *http.Request) {
@@ -307,7 +497,7 @@ func newAPIError(resp *http.Response, method string, path string) error {
 	message := statusGuidance(resp.StatusCode)
 	envelope, hasEnvelope := parseEnvelope(bodyBytes)
 	if hasEnvelope && envelope.Code >= 400 {
-		return envelopeAPIError(resp.StatusCode, method, path, bodyBytes, envelope)
+		return envelopeAPIError(resp.StatusCode, method, path, bodyBytes, envelope, resp.Header.Get("Retry-After"))
 	}
 	if detail := errorDetail(body); detail != "" {
 		message = message + ": " + detail
@@ -322,6 +512,7 @@ func newAPIError(resp *http.Response, method string, path string) error {
 		Path:       path,
 		Message:    message,
 		Body:       body,
+		RetryAfter: resp.Header.Get("Retry-After"),
 	}
 }
 
@@ -355,7 +546,7 @@ func parseEnvelope(body []byte) (responseEnvelope, bool) {
 	return envelope, true
 }
 
-func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope) error {
+func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope, retryAfter string) error {
 	effectiveStatusCode := statusCode
 	if envelope.Code >= 400 {
 		effectiveStatusCode = envelope.Code
@@ -377,6 +568,7 @@ func envelopeAPIError(statusCode int, method string, path string, body []byte, e
 		ResponseID: envelope.ResponseID,
 		Message:    message,
 		Body:       strings.TrimSpace(string(body)),
+		RetryAfter: retryAfter,
 	}
 }
 

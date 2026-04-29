@@ -69,6 +69,13 @@ Prefer API key authentication for automation.
 modeled explicitly by `pfsense_haproxy_apply`; settings and other durable
 resources do not trigger hidden reloads.
 
+The REST client retries only safe reads. `GET` requests are retried once for
+transient transport failures and HTTP/API-envelope `408`, `429`, `500`, `502`,
+`503`, and `504` responses, honoring `Retry-After` up to a bounded delay.
+Mutating `POST`, `PATCH`, `PUT`, and `DELETE` requests are never replayed
+automatically; transient write failures include diagnostics telling operators
+to refresh or inspect live pfSense HAProxy state before rerunning Terraform.
+
 ## HAProxy settings ownership
 
 `pfsense_haproxy_settings` is split into a data source and a singleton resource:
