@@ -700,7 +700,10 @@ responses before production use.
 ## Schema inventory
 
 HAProxy endpoint inventory and provisional resource schema decisions are tracked
-under `docs/schema/`. Live schema captures must be generated with:
+under `docs/schema/`. M6 issue #18 UAT closeout evidence, including the
+acceptance runbook and endpoint response shape ledger, is tracked in
+[`docs/schema/m6-uat-acceptance-evidence.md`](docs/schema/m6-uat-acceptance-evidence.md).
+Live schema captures must be generated with:
 
 ```bash
 python3 scripts/capture_haproxy_schema.py --schema both --output-dir docs/schema

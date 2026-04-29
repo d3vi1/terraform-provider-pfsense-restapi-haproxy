@@ -500,7 +500,7 @@ func TestHaproxyFrontendAddressResourceModifyPlanCanonicalizesCustomIPv6(t *test
 	}
 }
 
-func TestHaproxyFrontendAddressAPICanonicalizesCustomIPv6ForMatchingAndState(t *testing.T) {
+func TestHaproxyFrontendAddressNormalizesCustomIPv6PayloadForMatchingAndState(t *testing.T) {
 	t.Parallel()
 
 	payload := map[string]any{
@@ -529,7 +529,7 @@ func TestHaproxyFrontendAddressAPICanonicalizesCustomIPv6ForMatchingAndState(t *
 		t.Fatalf("model from API returned error: %v", err)
 	}
 	if model.ID.ValueString() != "app_frontend/custom/2001:db8::10/443" || model.ExtaddrCustom.ValueString() != "2001:db8::10" {
-		t.Fatalf("API model was not canonicalized: %#v", model)
+		t.Fatalf("provider model was not normalized from API payload: %#v", model)
 	}
 }
 
