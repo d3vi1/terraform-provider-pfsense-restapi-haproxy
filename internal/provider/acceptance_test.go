@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"regexp"
 	"strings"
@@ -89,4 +90,10 @@ func testAccResourceName(t *testing.T, suffix string) string {
 		t.Fatalf("acceptance resource name %q must match %s", name, testAccNamePattern.String())
 	}
 	return name
+}
+
+func testAccPort(name string, offset int) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(name))
+	return 20000 + int(hash.Sum32()%20000) + offset
 }
