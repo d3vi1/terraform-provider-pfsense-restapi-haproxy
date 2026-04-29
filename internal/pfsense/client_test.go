@@ -460,6 +460,230 @@ func TestAPIErrorResponsesAreActionable(t *testing.T) {
 	}
 }
 
+func TestGetRetriesTransientHTTPFailureOnce(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if seen.Add(1) == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"message":"pfSense reload in progress"}`))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.Get(context.Background(), "/haproxy/test", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("response not decoded")
+	}
+	if got := seen.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+}
+
+func TestGetRetriesTransientTransportFailureOnce(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+	var seen atomic.Int32
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if seen.Add(1) == 1 {
+			return nil, temporaryTimeoutError{}
+		}
+		return testJSONResponse(req, `{"ok":true}`), nil
+	})
+
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.Get(context.Background(), "/haproxy/test", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("response not decoded")
+	}
+	if got := seen.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+}
+
+func TestPostTransientHTTPFailureIsNotRetried(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		seen.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"message":"temporary API outage"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	err := client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-a"}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if got := seen.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	for _, want := range []string{"Classified as transient", "unsafe config write was not retried automatically", "Refresh or inspect live pfSense HAProxy state"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
+func TestPostTransientTransportFailureIsNotRetried(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient(Config{Endpoint: "https://pfsense.example.com", APIKey: "test-key"})
+	var seen atomic.Int32
+	client.httpClient.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		seen.Add(1)
+		return nil, temporaryTimeoutError{}
+	})
+
+	err := client.Post(context.Background(), "/haproxy/test", map[string]string{"name": "backend-a"}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if got := seen.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	for _, want := range []string{"Classified as transient", "unsafe config write was not retried automatically", "Refresh or inspect live pfSense HAProxy state"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
+func TestGetPermanentFailuresAreNotRetried(t *testing.T) {
+	t.Parallel()
+
+	statuses := []int{
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusConflict,
+		http.StatusUnprocessableEntity,
+	}
+
+	for _, status := range statuses {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			var seen atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				seen.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"permanent failure"}`))
+			}))
+			t.Cleanup(server.Close)
+
+			client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+			err := client.Get(context.Background(), "/haproxy/test", nil)
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if got := seen.Load(); got != 1 {
+				t.Fatalf("requests = %d, want 1", got)
+			}
+			if !strings.Contains(err.Error(), "Classified as permanent") {
+				t.Fatalf("error %q does not classify permanent failure", err.Error())
+			}
+		})
+	}
+}
+
+func TestGetRetriesTransientEnvelopeFailureOnce(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if seen.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{
+				"code": 503,
+				"status": "error",
+				"response_id": "resp-transient",
+				"message": "reload in progress"
+			}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"code": 200,
+			"status": "ok",
+			"data": {"ok": true}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.Get(context.Background(), "/haproxy/test", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("response not decoded")
+	}
+	if got := seen.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+}
+
+func TestRetryWaitHonorsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		seen.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"message":"retry later"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	start := time.Now()
+	err := client.Get(ctx, "/haproxy/test", nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("retry wait did not honor context cancellation; elapsed = %s", elapsed)
+	}
+	if got := seen.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	for _, want := range []string{"Classified as transient", "safe GET retry wait canceled"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
 func TestEnvelopeResponseDecodesData(t *testing.T) {
 	t.Parallel()
 
@@ -681,6 +905,20 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+type temporaryTimeoutError struct{}
+
+func (temporaryTimeoutError) Error() string {
+	return "temporary timeout"
+}
+
+func (temporaryTimeoutError) Timeout() bool {
+	return true
+}
+
+func (temporaryTimeoutError) Temporary() bool {
+	return true
 }
 
 func configWriteGuardHeld() bool {
