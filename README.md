@@ -76,6 +76,68 @@ Mutating `POST`, `PATCH`, `PUT`, and `DELETE` requests are never replayed
 automatically; transient write failures include diagnostics telling operators
 to refresh or inspect live pfSense HAProxy state before rerunning Terraform.
 
+## UAT and PROD provider patterns
+
+UAT is the normal target for mutable HAProxy resources and
+`pfsense_haproxy_apply`. Production read-only behavior is a workflow policy, not
+a provider-enforced capability: a `pfsense.prod` alias can still be attached to
+mutable resources if an operator writes that configuration. In normal use,
+production aliases must be used only for data sources, discovery, and refresh
+validation unless a separate issue defines the production write/import/apply
+window and the operator confirms it explicitly.
+
+When UAT and PROD appear in one module, every resource and data source should
+pin `provider = pfsense.uat` or `provider = pfsense.prod` so Terraform cannot
+accidentally use the wrong firewall.
+
+```hcl
+provider "pfsense" {
+  alias        = "uat"
+  endpoint     = var.pfsense_uat_endpoint
+  api_key      = var.pfsense_uat_api_key
+  insecure_tls = var.pfsense_uat_insecure_tls
+  timeout      = var.pfsense_timeout
+}
+
+provider "pfsense" {
+  alias        = "prod"
+  endpoint     = var.pfsense_prod_endpoint
+  api_key      = var.pfsense_prod_api_key
+  username     = var.pfsense_prod_username
+  password     = var.pfsense_prod_password
+  insecure_tls = var.pfsense_prod_insecure_tls
+  timeout      = var.pfsense_timeout
+}
+```
+
+`examples/provider.tf` keeps the default provider for simple UAT snippets and
+also defines an explicit `uat` alias. The production read-only example keeps the
+`prod` alias isolated in a data-source-only module and uses only
+`provider = pfsense.prod` data sources.
+
+## HAProxy Terraform ownership model
+
+Terraform owns only objects represented by resources in state:
+
+- Settings are an import-first singleton with fixed ID `settings`; delete is
+  state-only.
+- Backends and frontends use stable natural name keys. Transient pfSense REST
+  IDs are rediscovered before update/delete operations.
+- Child resources use composite natural keys such as `backend/server`,
+  `frontend/address/custom-or-/port`, `backend/acl`, or `frontend/certificate`.
+- Action resources use a Terraform-only `key`; live objects are matched by
+  normalized action payload fields because pfSense actions do not expose stable
+  names.
+- Certificates attach existing pfSense certificate references only. The
+  provider does not own PEM bodies or private keys.
+- Apply/reload is explicit through `pfsense_haproxy_apply`. Durable resources
+  never auto-apply pending HAProxy changes.
+- Production should use data sources only unless a separate approved production
+  change issue defines the import/migration plan and operator window.
+- HAProxy files, advanced text fields, error files, and default certificate
+  ownership remain deferred until UAT validates endpoint behavior and a state
+  safety model.
+
 ## HAProxy settings ownership
 
 `pfsense_haproxy_settings` is split into a data source and a singleton resource:
@@ -713,6 +775,8 @@ acceptance runbook and endpoint response shape ledger, is tracked in
 M6 issue #19 production read-only validation workflow and evidence format are
 tracked in
 [`docs/schema/m6-prod-readonly-validation.md`](docs/schema/m6-prod-readonly-validation.md).
+M6 issue #21 usage and ownership documentation gate evidence is tracked in
+[`docs/schema/m6-usage-documentation-gate.md`](docs/schema/m6-usage-documentation-gate.md).
 Live schema captures must be generated with:
 
 ```bash

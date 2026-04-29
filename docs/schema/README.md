@@ -82,6 +82,11 @@ evidence format are tracked in
 [`m6-prod-readonly-validation.md`](m6-prod-readonly-validation.md). That lane
 uses only GET requests and explicitly forbids production apply/write steps.
 
+M6 issue #21 usage and ownership documentation gate evidence is tracked in
+[`m6-usage-documentation-gate.md`](m6-usage-documentation-gate.md). That gate
+documents UAT-write and PROD-read-only provider alias patterns, the Terraform
+ownership model, changed docs list, and validation evidence.
+
 For M2-01, `pfsense_haproxy_settings` uses the upstream
 `HAProxySettings.inc` scalar model as a conservative implementation reference:
 Terraform manages only scalar fields, treats `advanced` as sensitive, and does
