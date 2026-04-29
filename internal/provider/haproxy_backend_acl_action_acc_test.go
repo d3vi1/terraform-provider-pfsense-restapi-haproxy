@@ -400,10 +400,10 @@ func testAccCheckBackendActionImportState(backendName string, key string) resour
 		expectedID := fmt.Sprintf("%s/%s", backendName, key)
 		var attributes map[string]string
 		for _, state := range states {
-			if state.Ephemeral.Type != "pfsense_haproxy_backend_action" {
+			if state.Attributes["id"] != expectedID {
 				continue
 			}
-			if state.Attributes["id"] != expectedID {
+			if state.Attributes["backend_name"] != backendName || state.Attributes["key"] != key {
 				continue
 			}
 			attributes = state.Attributes
