@@ -210,7 +210,7 @@ func (c *Client) doWithRetry(ctx context.Context, method string, requestURL stri
 		class := classifyFailure(err)
 		if shouldRetryRequest(ctx, method, class, attempt) {
 			if waitErr := waitBeforeRetry(ctx, retryDelay(err)); waitErr != nil {
-				return decorateRequestError(method, displayPath, fmt.Errorf("%w; safe GET retry wait canceled: %v", err, waitErr), class, retryAttempted, false)
+				return decorateRequestError(method, displayPath, fmt.Errorf("%w; safe GET retry wait canceled: %w", err, waitErr), class, retryAttempted, false)
 			}
 			retryAttempted = true
 			continue
@@ -258,7 +258,7 @@ func (c *Client) doOnce(ctx context.Context, method string, requestURL string, d
 
 	if envelope, ok := parseEnvelope(responseBody); ok {
 		if envelope.Code >= 400 {
-			return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope)
+			return envelopeAPIError(resp.StatusCode, method, displayPath, responseBody, envelope, resp.Header.Get("Retry-After"))
 		}
 		if out == nil {
 			return nil
@@ -288,9 +288,6 @@ func classifyFailure(err error) failureClass {
 		return classifyStatusCode(apiErr.StatusCode)
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return failureClassPermanent
-	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return failureClassTransient
@@ -300,6 +297,9 @@ func classifyFailure(err error) failureClass {
 	}
 	if errors.As(err, &temporaryErr) && temporaryErr.Temporary() {
 		return failureClassTransient
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return failureClassPermanent
 	}
 
 	return failureClassPermanent
@@ -497,7 +497,7 @@ func newAPIError(resp *http.Response, method string, path string) error {
 	message := statusGuidance(resp.StatusCode)
 	envelope, hasEnvelope := parseEnvelope(bodyBytes)
 	if hasEnvelope && envelope.Code >= 400 {
-		return envelopeAPIError(resp.StatusCode, method, path, bodyBytes, envelope)
+		return envelopeAPIError(resp.StatusCode, method, path, bodyBytes, envelope, resp.Header.Get("Retry-After"))
 	}
 	if detail := errorDetail(body); detail != "" {
 		message = message + ": " + detail
@@ -546,7 +546,7 @@ func parseEnvelope(body []byte) (responseEnvelope, bool) {
 	return envelope, true
 }
 
-func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope) error {
+func envelopeAPIError(statusCode int, method string, path string, body []byte, envelope responseEnvelope, retryAfter string) error {
 	effectiveStatusCode := statusCode
 	if envelope.Code >= 400 {
 		effectiveStatusCode = envelope.Code
@@ -568,6 +568,7 @@ func envelopeAPIError(statusCode int, method string, path string, body []byte, e
 		ResponseID: envelope.ResponseID,
 		Message:    message,
 		Body:       strings.TrimSpace(string(body)),
+		RetryAfter: retryAfter,
 	}
 }
 

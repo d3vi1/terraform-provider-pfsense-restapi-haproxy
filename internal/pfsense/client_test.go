@@ -518,6 +518,40 @@ func TestGetRetriesTransientTransportFailureOnce(t *testing.T) {
 	}
 }
 
+func TestGetRetriesClientTimeoutOnce(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if seen.Add(1) == 1 {
+			time.Sleep(200 * time.Millisecond)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{
+		Endpoint: server.URL,
+		APIKey:   "test-key",
+		Timeout:  50 * time.Millisecond,
+	})
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.Get(context.Background(), "/haproxy/test", &response); err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("response not decoded")
+	}
+	if got := seen.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+}
+
 func TestPostTransientHTTPFailureIsNotRetried(t *testing.T) {
 	t.Parallel()
 
@@ -676,6 +710,52 @@ func TestRetryWaitHonorsContextCancellation(t *testing.T) {
 	}
 	if got := seen.Load(); got != 1 {
 		t.Fatalf("requests = %d, want 1", got)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error %q does not wrap context.Canceled", err.Error())
+	}
+	for _, want := range []string{"Classified as transient", "safe GET retry wait canceled"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+}
+
+func TestEnvelopeRetryWaitHonorsRetryAfterAndContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	var seen atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		seen.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "1")
+		_, _ = w.Write([]byte(`{
+			"code": 503,
+			"status": "error",
+			"response_id": "resp-retry-after",
+			"message": "retry later"
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(Config{Endpoint: server.URL, APIKey: "test-key"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(150*time.Millisecond, cancel)
+
+	start := time.Now()
+	err := client.Get(ctx, "/haproxy/test", nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("retry wait did not honor context cancellation; elapsed = %s", elapsed)
+	}
+	if got := seen.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error %q does not wrap context.Canceled", err.Error())
 	}
 	for _, want := range []string{"Classified as transient", "safe GET retry wait canceled"} {
 		if !strings.Contains(err.Error(), want) {
