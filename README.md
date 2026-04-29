@@ -79,10 +79,12 @@ to refresh or inspect live pfSense HAProxy state before rerunning Terraform.
 ## UAT and PROD provider patterns
 
 UAT is the normal target for mutable HAProxy resources and
-`pfsense_haproxy_apply`. Production provider aliases are read-only by default:
-use them for data sources, discovery, and refresh validation unless a separate
-issue defines the production write/import/apply window and the operator confirms
-it explicitly.
+`pfsense_haproxy_apply`. Production read-only behavior is a workflow policy, not
+a provider-enforced capability: a `pfsense.prod` alias can still be attached to
+mutable resources if an operator writes that configuration. In normal use,
+production aliases must be used only for data sources, discovery, and refresh
+validation unless a separate issue defines the production write/import/apply
+window and the operator confirms it explicitly.
 
 When UAT and PROD appear in one module, every resource and data source should
 pin `provider = pfsense.uat` or `provider = pfsense.prod` so Terraform cannot
@@ -109,8 +111,9 @@ provider "pfsense" {
 ```
 
 `examples/provider.tf` keeps the default provider for simple UAT snippets and
-also defines explicit `uat` and `prod` aliases. The production read-only example
-uses only `provider = pfsense.prod` data sources.
+also defines an explicit `uat` alias. The production read-only example keeps the
+`prod` alias isolated in a data-source-only module and uses only
+`provider = pfsense.prod` data sources.
 
 ## HAProxy Terraform ownership model
 

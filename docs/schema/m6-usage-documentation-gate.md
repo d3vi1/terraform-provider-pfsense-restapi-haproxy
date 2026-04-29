@@ -19,8 +19,10 @@ evidence remains tracked by issue #19.
 - `examples/prod-readonly-validation/main.tf`
 - `docs/schema/README.md`
 - `docs/schema/m6-usage-documentation-gate.md`
-- `xconnector-doc/docs/40-terraform/pfsense-haproxy-provider.md`
-- `xconnector-doc/docs/index.md`
+- `xconnector-doc/docs/40-terraform/pfsense-haproxy-provider.md` (prepared
+  locally; pending companion docs repo branch/commit/PR)
+- `xconnector-doc/docs/index.md` (prepared locally; pending companion docs repo
+  branch/commit/PR)
 
 ## Validation Evidence
 
@@ -35,7 +37,7 @@ evidence remains tracked by issue #19.
 | `make lint` | PASS, `0 issues.` |
 | `python3 -m unittest scripts/capture_haproxy_schema_test.py scripts/prod_readonly_validate_test.py` | PASS, 14 tests. |
 | `PFSENSE_VALIDATION_ENVIRONMENT=prod PFSENSE_READONLY_CONFIRMATION=READ_ONLY_PROD_VALIDATION PFSENSE_ENDPOINT=https://example.invalid PFSENSE_API_KEY=dummy python3 scripts/prod_readonly_validate.py --dry-run` | PASS, printed the static GET allowlist without network access. |
-| `xconnector-doc` docs-only inspection | PASS, added `docs/40-terraform/pfsense-haproxy-provider.md`; `git diff --check` passed. |
+| `xconnector-doc` docs-only inspection | Local draft prepared and `git diff --check` passed; companion docs repo branch/commit/PR is pending and must be recorded before claiming the external documentation gate as complete. |
 
 If Terraform cannot validate examples because the provider source is not
 available from a registry in the worker environment, record the skipped command
@@ -71,5 +73,6 @@ Close issue #21 only after:
 
 - README usage and ownership sections are merged;
 - examples show explicit UAT/PROD provider aliasing;
-- xconnector-doc has a canonical provider usage page and index link;
+- xconnector-doc has a canonical provider usage page and index link committed
+  in a companion docs repo PR or explicitly tracked follow-up;
 - validation commands are recorded in the PR and this evidence file.
